@@ -108,7 +108,7 @@ def phase_transitions(shape, q, J, Ts, sweeps, data_start=800000, kB=1):
         plot_E_M_a(Es, Ms, angles, q, J, T)
         cVs.append(heat_capacity(Es[data_start:], T, kB))
         Xis.append(magnetic_susceptibility(Ms[data_start:], T, kB))
-        print("ah")
+        print(100/len(Ts) * (Ts.index(T)+1), " %")
     fig,axs = plt.subplots(2, 1, constrained_layout=True)
     axs[0].plot(Ts, cVs, '.--')
     axs[0].set_xlabel('T')
@@ -137,6 +137,7 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
             M_T, angle_T = magnetization(replicas[i], q)
             Ms_T[i].append(M_T)
             angles_T[i].append(angle_T)
+        # if step > 800000 and step%5000==0:
         for i in range(len(Ts) - 1):
             beta1, beta2 = 1/(kB*Ts[i]), 1/(Ts[i+1]*kB)
             exponent = (beta1 - beta2) * (Es_T[i][-1] - Es_T[i + 1][-1])
@@ -168,19 +169,19 @@ def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
 shape = (20, 20)
 q = 5
 J = 1
-T = 1.135
-Ts = [0.7, 0.75, 0.8, 0.825, 0.85, 0.875, 0.9, 0.95, 1]
-sweeps = 500000
-data_start = 250000
+T = 0.6
+Ts = [0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4]
+sweeps = 1000000
+data_start = 800000
 
 
-# parallel tempering
-t0 = time.time()
-fields, Es_T, Ms_T, angles_T = parallel_tempering(shape, q, J, Ts, sweeps)
-t1 = time.time()
-print((t1-t0)/60)
+# # parallel tempering
+# t0 = time.time()
+# fields, Es_T, Ms_T, angles_T = parallel_tempering(shape, q, J, Ts, sweeps)
+# t1 = time.time()
+# print((t1-t0)/60, "min")
 
-plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
+# plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
 
 
 
@@ -188,11 +189,11 @@ plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
 # t0 = time.time()
 # phase_transitions(shape, q, J, Ts, sweeps)
 # t1 = time.time()
-# print((t1-t0)/60)
+# print((t1-t0)/60, "min")
 
 
 
-## metropolis
+# metropolis
 # t0 = time.time()
 # field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps)
 # t1 = time.time()
@@ -206,3 +207,10 @@ plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
 
 # print(cV)
 # print(Xi)
+
+# fig = plt.figure(dpi=150)
+# plt.hist(Es[800000:], bins=40)
+# fig = plt.figure(dpi=150)
+# plt.hist(Ms[800000:], bins=40)
+
+
