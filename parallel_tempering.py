@@ -105,8 +105,8 @@ def phase_transitions(shape, q, J, Ts, sweeps):
     for T in Ts:
         field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps)
         plot_E_M_a(Es, Ms, angles, q, J, T)
-        cVs.append(heat_capacity(Es[800000:], T))
-        Xis.append(magnetic_susceptibility(Ms[800000:], T))
+        cVs.append(heat_capacity(Es[400000:], T))
+        Xis.append(magnetic_susceptibility(Ms[400000:], T))
         print("ah")
     fig,axs = plt.subplots(2, 1, constrained_layout=True)
     axs[0].plot(Ts, cVs, '.--')
@@ -120,29 +120,29 @@ def phase_transitions(shape, q, J, Ts, sweeps):
 
 
 shape = (20, 20)
-q = 5
+q = 2
 J = 1
-T = 0.851
-Ts = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05]
+T = 1.135
+Ts = [0.9, 0.95, 1, 1.05, 1.1, 1.135, 1.15, 1.2, 1.25, 1.3, 1.35]
 sweeps = 1000000
 
-# t0 = time.time()
-# phase_transitions(shape, q, J, Ts, sweeps)
-# t1 = time.time()
-# print((t1-t0)/60)
-
-
 t0 = time.time()
-field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps)
+phase_transitions(shape, q, J, Ts, sweeps)
 t1 = time.time()
-print((t1-t0)/60, "min")
+print((t1-t0)/60)
 
 
-show_config(field, q)
-plot_E_M_a(Es, Ms, angles, q, J, T)
+# t0 = time.time()
+# field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps)
+# t1 = time.time()
+# print((t1-t0)/60, "min")
 
-cV = heat_capacity(Es[800000:], T)
-Xi = magnetic_susceptibility(Ms[800000:], T)
 
-print(cV)
-print(Xi)
+# show_config(field, q)
+# plot_E_M_a(Es, Ms, angles, q, J, T)
+
+# cV = heat_capacity(Es[800000:], T)
+# Xi = magnetic_susceptibility(Ms[800000:], T)
+
+# print(cV)
+# print(Xi)
