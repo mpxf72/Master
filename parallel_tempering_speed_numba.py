@@ -73,7 +73,7 @@ def metropolis(shape, q, J, T, sweeps, kB=1):
     while counter < sweeps:
         # for _ in range(shape[0]*shape[1]):
         config, delta_E = metropolis_local(config, J, T, q)
-        # if counter%500 == 0:
+        # if counter%2000 == 0:
         #     title = "C:\\Users\\unter\\Documents\\GitHub\\Master\\pictures for gif\\%g.PNG" %counter
         #     normalized_config = config/q
         #     pic = Image.fromarray(np.uint8(cm.gist_rainbow(normalized_config)*255))
@@ -83,6 +83,7 @@ def metropolis(shape, q, J, T, sweeps, kB=1):
         Ms.append(M_i)
         angles.append(angle_i)
         counter += 1
+        # print(100/sweeps * counter, " %")
     return config, Es, Ms, angles
 
 
@@ -117,7 +118,7 @@ def phase_transitions(shape, q, J, Ts, sweeps, data_start=800000, kB=1):
         plot_E_M_a(Es, Ms, angles, q, J, T)
         cVs.append(heat_capacity(Es[data_start:], T, kB))
         Xis.append(magnetic_susceptibility(Ms[data_start:], T, kB))
-        print("ah")
+        print(100/len(Ts) * (Ts.index(T)+1), " %")
     fig,axs = plt.subplots(2, 1, constrained_layout=True)
     axs[0].plot(Ts, cVs, '.--')
     axs[0].set_xlabel('T')
@@ -178,10 +179,10 @@ def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
 shape = (20, 20)
 q = 5
 J = 1
-T = 1.135
-Ts = [0.7, 0.75, 0.8]
+T = 0.7
+Ts = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05]
 sweeps = 1000000
-data_start = 250000
+data_start = 800000
 
 
 # #parallel tempering
@@ -199,12 +200,12 @@ t0 = time.time()
 phase_transitions(shape, q, J, Ts, sweeps)
 t1 = time.time()
 print((t1-t0)/60)
-print('without number: ', 0.9463132143020629)
-print('with number: ', )
-print(0.9463132143020629/0.22277793486913045, 'x-times faster')
+# print('without number: ', 0.9463132143020629)
+# print('with number: ', )
+# print(0.9463132143020629/0.22277793486913045, 'x-times faster')
 
 
-## metropolis
+# # metropolis
 # t0 = time.time()
 # field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps)
 # t1 = time.time()
@@ -218,3 +219,10 @@ print(0.9463132143020629/0.22277793486913045, 'x-times faster')
 
 # print(cV)
 # print(Xi)
+
+# fig = plt.figure(dpi=150)
+# plt.hist(Es[800000:], bins=100)
+# fig = plt.figure(dpi=150)
+# plt.hist(Ms[800000:], bins=100)
+
+
