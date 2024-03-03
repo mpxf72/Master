@@ -88,10 +88,12 @@ def metropolis(shape, q, J, T, sweeps, kB=1):
 
 
 def heat_capacity(energies, T, kB=1):
-    return 1/(kB * T**2) * np.var(energies)
+    var, error = jackknife_var(energies)
+    return 1/(kB * T**2) * var, 1/(kB * T**2) * error
 
 def magnetic_susceptibility(magnetizations, T, kB=1):
-    return 1/(kB * T) * np.var(magnetizations)
+    var, error = jackknife_var(magnetizations)
+    return 1/(kB * T) * var, 1/(kB * T) * error
 
 
 def plot_E_M_a(Es, Ms, angles, q, J, T):
@@ -112,23 +114,61 @@ def plot_E_M_a(Es, Ms, angles, q, J, T):
 
 def phase_transitions(shape, q, J, Ts, sweeps, data_start=800000, kB=1):
     cVs = []
+    cVs_error = []
     Xis = []
+    Xis_error = []
     for T in Ts:
         field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps, kB)
         plot_E_M_a(Es, Ms, angles, q, J, T)
-        cVs.append(heat_capacity(Es[data_start:], T, kB))
-        Xis.append(magnetic_susceptibility(Ms[data_start:], T, kB))
+        cV, cV_error = heat_capacity(Es[data_start:], T, kB)
+        cVs.append(cV)
+        cVs_error.append(cV_error)
+        Xi, Xi_error = magnetic_susceptibility(Ms[data_start:], T, kB)
+        Xis.append(Xi)
+        Xis_error.append(Xi_error)
         print(100/len(Ts) * (Ts.index(T)+1), " %")
     fig,axs = plt.subplots(2, 1, constrained_layout=True)
-    axs[0].plot(Ts, cVs, '.--')
+    axs[0].errorbar(Ts, cVs, yerr=cVs_error, fmt='.--', capsize=5, capthick=1)
     axs[0].set_xlabel('T')
     axs[0].set_ylabel('c_V')
-    axs[1].plot(Ts, Xis, '.--')
+    axs[1].errorbar(Ts, Xis, yerr=Xis_error, fmt='.--', capsize=5, capthick=1)
     axs[1].set_xlabel('T')
     axs[1].set_ylabel('Xi')
     plt.title("q = %g, J = %g" %(q, J))
     plt.show()
-    
+
+def jackknife_avrg(dataset, n_blocks=10):
+    raw_avrg = np.average(dataset)
+    sum_1 = 0
+    block_size = len(dataset) // n_blocks
+    jackknife_samples = np.empty(n_blocks)
+    for i in range(n_blocks):
+        block_start = i * block_size
+        block_end = (i + 1) * block_size
+        block_data = np.delete(dataset, slice(block_start, block_end))
+        jackknife_samples[i] = np.mean(block_data)
+        sum_1 += (jackknife_samples[i] - raw_avrg)**2
+    sigma = np.sqrt((n_blocks - 1)/n_blocks * sum_1)
+    avrg_bias = 1/n_blocks * np.sum(jackknife_samples)
+    true_avrg = raw_avrg - (n_blocks - 1)*(avrg_bias - raw_avrg)
+    return true_avrg, sigma
+
+def jackknife_var(dataset, n_blocks=50):
+    raw_var = np.var(dataset)
+    sum_1 = 0
+    block_size = len(dataset) // n_blocks
+    jackknife_samples = np.empty(n_blocks)
+    for i in range(n_blocks):
+        block_start = i * block_size
+        block_end = (i + 1) * block_size
+        block_data = np.delete(dataset, slice(block_start, block_end))
+        jackknife_samples[i] = np.var(block_data)
+        sum_1 += (jackknife_samples[i] - raw_var)**2
+    sigma = np.sqrt((n_blocks - 1)/n_blocks * sum_1)
+    var_bias = 1/n_blocks * np.sum(jackknife_samples)
+    true_var = raw_var - (n_blocks - 1)*(var_bias - raw_var)
+    return true_var, sigma
+
 @njit
 def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
     replicas = [initialize_lattice(shape, q) for _ in range(len(Ts))]
@@ -163,8 +203,8 @@ def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
     Xis = []
     for E_T, M_T, angle_T, T in zip(Es_T, Ms_T, angles_T, Ts):
         plot_E_M_a(E_T, M_T, angle_T, q, J, T)
-        cVs.append(heat_capacity(E_T[data_start:], T))
-        Xis.append(magnetic_susceptibility(M_T[data_start:], T))
+        cVs.append(heat_capacity(E_T[data_start:], T)[0])
+        Xis.append(magnetic_susceptibility(M_T[data_start:], T)[0])
     fig,axs = plt.subplots(2, 1, constrained_layout=True)
     axs[0].plot(Ts, cVs, '.--')
     axs[0].set_xlabel('T')
@@ -197,9 +237,10 @@ data_start = 800000
 
 # metropolis for phase transition
 t0 = time.time()
-phase_transitions(shape, q, J, Ts, sweeps)
+phase_transitions(shape, q, J, Ts, sweeps, data_start)
 t1 = time.time()
 print((t1-t0)/60)
+
 # print('without number: ', 0.9463132143020629)
 # print('with number: ', )
 # print(0.9463132143020629/0.22277793486913045, 'x-times faster')
