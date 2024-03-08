@@ -1,4 +1,3 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -170,7 +169,7 @@ def jackknife_var(dataset, n_blocks=50):
     return true_var, sigma
 
 @njit
-def parallel_tempering(shape, q, J, Ts, sweeps, kb=1):
+def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
     replicas = [initialize_lattice(shape, q) for _ in range(len(Ts))]
     # replicas = [] 
     # same_start = initialize_lattice(shape,q)
@@ -193,15 +192,29 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kb=1):
             M_T, angle_T = magnetization(replicas[i], q)
             Ms_T[i].append(M_T)
             angles_T[i].append(angle_T)
-        for i in range(0, len(Ts) - 1, 2):
-            beta1, beta2 = 1/(kb*Ts[i]), 1/(Ts[i+1]*kb)
-            exponent = (beta1 - beta2) * (Es_T[i][-1] - Es_T[i + 1][-1])
+        i = 0
+        while i < len(Ts)-1:
+            beta1, beta2 = 1/(kB*Ts[i]), 1/(Ts[i+1]*kB)
+            exponent = (beta1 - beta2) * (-Es_T[i][-1] + Es_T[i + 1][-1])
             if np.random.rand() < np.exp(-exponent):
                 counter += 1
-                replicas[i], replicas[i + 1] = replicas[i+1], replicas[i]
-                Es_T[i][-1], Es_T[i+1][-1] = Es_T[i+1][-1], Es_T[i][-1]
-                Ms_T[i][-1], Ms_T[i+1][-1] = Ms_T[i+1][-1], Ms_T[i][-1]
-                angles_T[i][-1], angles_T[i+1][-1] = angles_T[i+1][-1], angles_T[i][-1]
+                replicas[i], replicas[i+1] = replicas[i+1], replicas[i]
+                Es_T[i].append(Es_T[i+1][-1])
+                Es_T[i+1].append(Es_T[i][-2])
+                Ms_T[i].append(Ms_T[i+1][-1])
+                Ms_T[i+1].append(Ms_T[i][-2])
+                angles_T[i].append(angles_T[i+1][-1])
+                angles_T[i+1].append(angles_T[i][-2])
+                i += 2
+                if i == len(Ts)-1:
+                    Es_T[-1].append(Es_T[-1][-1])
+                    Ms_T[-1].append(Ms_T[-1][-1])
+                    angles_T[-1].append(angles_T[-1][-1])
+            else:
+                Es_T[i].append(Es_T[i][-1])
+                Ms_T[i].append(Ms_T[i][-1])
+                angles_T[i].append(angles_T[i][-1])
+                i += 1
     print(counter)
     return replicas, Es_T, Ms_T, angles_T
 
