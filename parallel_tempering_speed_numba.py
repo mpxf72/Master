@@ -172,6 +172,11 @@ def jackknife_var(dataset, n_blocks=50):
 @njit
 def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
     replicas = [initialize_lattice(shape, q) for _ in range(len(Ts))]
+    # replicas = [] 
+    # same_start = initialize_lattice(shape,q)
+    # for i in range(len(Ts)):
+    #     replicas.append(same_start)
+    counter = 0
     Es_T = []
     Ms_T = []
     angles_T = []
@@ -190,63 +195,75 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
             angles_T[i].append(angle_T)
         for i in range(len(Ts) - 1):
             beta1, beta2 = 1/(kB*Ts[i]), 1/(Ts[i+1]*kB)
-            exponent = (beta1 - beta2) * (Es_T[i][-1] - Es_T[i + 1][-1])
+            exponent = (beta1 - beta2) * (Es_T[i][-1]) - (Es_T[i + 1][-1])
+            # print(np.exp(-exponent))
             if np.random.rand() < np.exp(-exponent):
-                replicas[i], replicas[i + 1] = replicas[i + 1], replicas[i]
-                Es_T[i][-1], Es_T[i+1][-1] = Es_T[i+1][-1], Es_T[i][-1]
-                Ms_T[i][-1], Ms_T[i+1][-1] = Ms_T[i+1][-1], Ms_T[i][-1]
-                angles_T[i][-1], angles_T[i+1][-1] = angles_T[i+1][-1], angles_T[i][-1]
+                counter += 1
+                a = replicas.copy()
+                b = Es_T.copy()
+                c = Ms_T.copy()
+                d = angles_T.copy()
+                replicas[i],replicas[i + 1] = a[i + 1], a[i]
+                Es_T[i][-1], Es_T[i+1][-1] = b[i+1][-1], b[i][-1]
+                Ms_T[i][-1], Ms_T[i+1][-1] = c[i+1][-1], c[i][-1]
+                angles_T[i][-1], angles_T[i+1][-1] = d[i+1][-1], d[i][-1]
+    # print(counter)
     return replicas, Es_T, Ms_T, angles_T
 
 def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
     cVs = []
+    cVs_error = []
     Xis = []
+    Xis_error = []
     for E_T, M_T, angle_T, T in zip(Es_T, Ms_T, angles_T, Ts):
+        cV, cV_error = heat_capacity(E_T[data_start:], T)
+        Xi, Xi_error = magnetic_susceptibility(M_T[data_start:], T)
         plot_E_M_a(E_T, M_T, angle_T, q, J, T)
-        cVs.append(heat_capacity(E_T[data_start:], T)[0])
-        Xis.append(magnetic_susceptibility(M_T[data_start:], T)[0])
+        cVs.append(cV)
+        cVs_error.append(cV_error)
+        Xis.append(Xi)
+        Xis_error.append(Xi_error)
     fig,axs = plt.subplots(2, 1, constrained_layout=True)
-    axs[0].plot(Ts, cVs, '.--')
+    axs[0].errorbar(Ts, cVs, yerr=cVs_error, fmt='.--', capsize=5, capthick=1)
     axs[0].set_xlabel('T')
     axs[0].set_ylabel('c_V')
-    axs[1].plot(Ts, Xis, '.--')
+    axs[1].errorbar(Ts, Xis, yerr=Xis_error, fmt='.--', capsize=5, capthick=1)
     axs[1].set_xlabel('T')
     axs[1].set_ylabel('Xi')
     plt.title("q = %g, J = %g" %(q, J))
     plt.show()
 
-
 shape = (20, 20)
 q = 5
 J = 1
-T = 0.7
-Ts = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05]
+T = 0.8
+Ts = [0.6 + i*0.06 for i in range(10)]
 sweeps = 1000000
 data_start = 800000
 
 
-# #parallel tempering
-# t0 = time.time()
-# fields, Es_T, Ms_T, angles_T = parallel_tempering(shape, q, J, Ts, sweeps)
-# t1 = time.time()
-# print((t1-t0)/60)
-
-# plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
-
-
-
-# metropolis for phase transition
+# parallel tempering # #
 t0 = time.time()
-phase_transitions(shape, q, J, Ts, sweeps, data_start)
+fields, Es_T, Ms_T, angles_T = parallel_tempering(shape, q, J, Ts, sweeps)
 t1 = time.time()
 print((t1-t0)/60)
+
+plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
+
+
+
+# # metropolis for phase transition # #
+# t0 = time.time()
+# phase_transitions(shape, q, J, Ts, sweeps, data_start)
+# t1 = time.time()
+# print((t1-t0)/60)
 
 # print('without number: ', 0.9463132143020629)
 # print('with number: ', )
 # print(0.9463132143020629/0.22277793486913045, 'x-times faster')
 
 
-# # metropolis
+# # metropolis # #
 # t0 = time.time()
 # field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps)
 # t1 = time.time()
