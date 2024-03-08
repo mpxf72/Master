@@ -170,7 +170,7 @@ def jackknife_var(dataset, n_blocks=50):
     return true_var, sigma
 
 @njit
-def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
+def parallel_tempering(shape, q, J, Ts, sweeps, kb=1):
     replicas = [initialize_lattice(shape, q) for _ in range(len(Ts))]
     # replicas = [] 
     # same_start = initialize_lattice(shape,q)
@@ -186,28 +186,23 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
         Ms_T.append([M_T])
         angles_T.append([angle_T])
     for step in range(sweeps):
-        #print(100/sweeps * step, " %")
+        print(100/sweeps * step, " %")
         for i, T in enumerate(Ts):
             replicas[i], delta_E = metropolis_local(replicas[i], J, T, q)
             Es_T[i].append(Es_T[i][-1] + delta_E)
             M_T, angle_T = magnetization(replicas[i], q)
             Ms_T[i].append(M_T)
             angles_T[i].append(angle_T)
-        for i in range(len(Ts) - 1):
-            beta1, beta2 = 1/(kB*Ts[i]), 1/(Ts[i+1]*kB)
-            exponent = (beta1 - beta2) * (Es_T[i][-1]) - (Es_T[i + 1][-1])
-            # print(np.exp(-exponent))
+        for i in range(0, len(Ts) - 1, 2):
+            beta1, beta2 = 1/(kb*Ts[i]), 1/(Ts[i+1]*kb)
+            exponent = (beta1 - beta2) * (Es_T[i][-1] - Es_T[i + 1][-1])
             if np.random.rand() < np.exp(-exponent):
                 counter += 1
-                a = replicas.copy()
-                b = Es_T.copy()
-                c = Ms_T.copy()
-                d = angles_T.copy()
-                replicas[i],replicas[i + 1] = a[i + 1], a[i]
-                Es_T[i][-1], Es_T[i+1][-1] = b[i+1][-1], b[i][-1]
-                Ms_T[i][-1], Ms_T[i+1][-1] = c[i+1][-1], c[i][-1]
-                angles_T[i][-1], angles_T[i+1][-1] = d[i+1][-1], d[i][-1]
-    # print(counter)
+                replicas[i], replicas[i + 1] = replicas[i+1], replicas[i]
+                Es_T[i][-1], Es_T[i+1][-1] = Es_T[i+1][-1], Es_T[i][-1]
+                Ms_T[i][-1], Ms_T[i+1][-1] = Ms_T[i+1][-1], Ms_T[i][-1]
+                angles_T[i][-1], angles_T[i+1][-1] = angles_T[i+1][-1], angles_T[i][-1]
+    print(counter)
     return replicas, Es_T, Ms_T, angles_T
 
 def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
@@ -237,7 +232,7 @@ shape = (20, 20)
 q = 5
 J = 1
 T = 0.8
-Ts = [0.6 + i*0.06 for i in range(10)]
+Ts = np.array([0.6 + i*0.05 for i in range(10)])
 sweeps = 1000000
 data_start = 800000
 
