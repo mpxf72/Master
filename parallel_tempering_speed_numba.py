@@ -136,6 +136,7 @@ def phase_transitions(shape, q, J, Ts, sweeps, data_start=800000, kB=1):
     plt.title("q = %g, J = %g" %(q, J))
     plt.show()
 
+
 def jackknife_avrg(dataset, n_blocks=10):
     raw_avrg = np.average(dataset)
     sum_1 = 0
@@ -176,10 +177,12 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
     # for i in range(len(Ts)):
     #     replicas.append(same_start)
     counter = 0
+    temperatures_bookkeeping = []
     Es_T = []
     Ms_T = []
     angles_T = []
     for i, T in enumerate(Ts):
+        temperatures_bookkeeping.append([T, T])
         Es_T.append([energy(replicas[i], J)])
         M_T, angle_T = magnetization(replicas[i], q)
         Ms_T.append([M_T])
@@ -197,6 +200,8 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
             beta1, beta2 = 1/(kB*Ts[i]), 1/(Ts[i+1]*kB)
             exponent = (beta1 - beta2) * (-Es_T[i][-1] + Es_T[i + 1][-1])
             if np.random.rand() < np.exp(-exponent):
+                temperatures_bookkeeping[i].append(temperatures_bookkeeping[i + 1][-1])
+                temperatures_bookkeeping[i+1].append(temperatures_bookkeeping[i][-2])
                 counter += 1
                 replicas[i], replicas[i+1] = replicas[i+1], replicas[i]
                 Es_T[i].append(Es_T[i+1][-1])
@@ -207,16 +212,23 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
                 angles_T[i+1].append(angles_T[i][-2])
                 i += 2
                 if i == len(Ts)-1:
+                    temperatures_bookkeeping[-1].append(temperatures_bookkeeping[-1][-1])
                     Es_T[-1].append(Es_T[-1][-1])
                     Ms_T[-1].append(Ms_T[-1][-1])
                     angles_T[-1].append(angles_T[-1][-1])
             else:
+                temperatures_bookkeeping[i].append(temperatures_bookkeeping[i][-1])
                 Es_T[i].append(Es_T[i][-1])
                 Ms_T[i].append(Ms_T[i][-1])
                 angles_T[i].append(angles_T[i][-1])
+                if i == len(Ts)-2:
+                    temperatures_bookkeeping[-1].append(temperatures_bookkeeping[-1][-1])
+                    Es_T[-1].append(Es_T[-1][-1])
+                    Ms_T[-1].append(Ms_T[-1][-1])
+                    angles_T[-1].append(angles_T[-1][-1])
                 i += 1
     print(counter)
-    return replicas, Es_T, Ms_T, angles_T
+    return replicas, Es_T, Ms_T, angles_T, temperatures_bookkeeping
 
 def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
     cVs = []
@@ -241,30 +253,51 @@ def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
     plt.title("q = %g, J = %g" %(q, J))
     plt.show()
 
+def plot_parallel_tempering_bookkeeping(Temperatures):
+    num_simulations = len(Temperatures)
+    num_steps = len(Temperatures[0])
+    fig = plt.figure(dpi=150)
+    for i in range(num_simulations):
+        plt.plot(range(num_steps), Temperatures[i], ".--", label=f'replica {i + 1}')
+    plt.xlabel('Simulation Time')
+    plt.ylabel('Temperature')
+    plt.title('Parallel Tempering - Evolution of Temperatures of the replicas')
+    plt.legend()
+    plt.show()
+
+def plot_histograms_energy(Es_T, q, Ts, bins=100):
+    for Es, T in zip(Es_T, Ts):
+        fig = plt.figure(dpi=150)
+        plt.hist(Es[data_start:], bins=bins)
+        plt.title('histogram, q = %g, T = %f' %(q, T))
+        plt.xlabel('energy')
+        plt.show()
+
+
 shape = (20, 20)
 q = 5
 J = 1
 T = 0.8
 Ts = np.array([0.6 + i*0.05 for i in range(10)])
 sweeps = 1000000
-data_start = 800000
+data_start = 1250000
 
 
 # parallel tempering # #
 t0 = time.time()
-fields, Es_T, Ms_T, angles_T = parallel_tempering(shape, q, J, Ts, sweeps)
+fields, Es_T, Ms_T, angles_T, temperatures_bookkeeping = parallel_tempering(shape, q, J, Ts, sweeps)
 t1 = time.time()
-print((t1-t0)/60)
+print((t1-t0)/60, " min")
 
 plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
-
-
+plot_histograms_energy(Es_T, q, Ts)
+plot_parallel_tempering_bookkeeping(np.array(temperatures_bookkeeping)[:, :10])
 
 # # metropolis for phase transition # #
 # t0 = time.time()
 # phase_transitions(shape, q, J, Ts, sweeps, data_start)
 # t1 = time.time()
-# print((t1-t0)/60)
+# print((t1-t0)/60, " min")
 
 # print('without number: ', 0.9463132143020629)
 # print('with number: ', )
