@@ -51,6 +51,12 @@ def magnetization(config, q):
     M /= N
     return np.abs(M), np.angle(M)
 @njit
+def magnetization_numbers(config, q):
+    numbers = []
+    for qi in range(1, q+1):
+        numbers.append(np.sum(config == qi))
+    return numbers
+@njit
 def metropolis_local(config, J, T, q, kB=1):
     i, j = np.random.randint(0, config.shape[0]), np.random.randint(0, config.shape[1])
     proposed_config = np.copy(config)
@@ -272,6 +278,18 @@ def plot_histograms_energy(Es_T, q, Ts, bins=100):
         plt.xlabel('energy')
         plt.show()
 
+def plot_magnetic_numbers(configs, Ts, q):
+    Ys = []
+    fig = plt.figure(dpi=150)
+    for config in configs:
+        numbers = magnetization_numbers(config, q)
+        Ys.append(sorted(numbers))
+    for i in range(len(Ys[0])):
+        plt.plot(Ts, np.array(Ys)[:, i], '.--')
+    plt.title('components of magnetization, q = %g' %q)
+    plt.xlabel('temperature')
+    plt.ylabel('# of the same component')
+    plt.show()
 
 shape = (20, 20)
 q = 5
@@ -289,9 +307,13 @@ t1 = time.time()
 print((t1-t0)/60, " min for the simulation")
 print("%f %% of the times was a temperature-exchange!" %(100/(hits * len(Ts)) * counter))
 
+t2 = time.time()
 plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
 plot_histograms_energy(Es_T, q, Ts)
 plot_parallel_tempering_bookkeeping(np.array(temperatures_bookkeeping)[:, :100])
+plot_magnetic_numbers(fields, Ts, q)
+t3 = time.time()
+print((t3-t2)/60, " min for all plots")
 
 # # metropolis for phase transition # #
 # t0 = time.time()
