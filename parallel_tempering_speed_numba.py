@@ -170,7 +170,7 @@ def jackknife_var(dataset, n_blocks=50):
     return true_var, sigma
 
 @njit
-def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
+def parallel_tempering(shape, q, J, Ts, hits, kB=1):
     replicas = [initialize_lattice(shape, q) for _ in range(len(Ts))]
     # replicas = [] 
     # same_start = initialize_lattice(shape,q)
@@ -187,8 +187,8 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
         M_T, angle_T = magnetization(replicas[i], q)
         Ms_T.append([M_T])
         angles_T.append([angle_T])
-    for step in range(sweeps):
-        print(100/sweeps * step, " %")
+    for hit in range(hits):
+        print(100/hits * hit, " %")
         for i, T in enumerate(Ts):
             replicas[i], delta_E = metropolis_local(replicas[i], J, T, q)
             Es_T[i].append(Es_T[i][-1] + delta_E)
@@ -227,8 +227,7 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
                     Ms_T[-1].append(Ms_T[-1][-1])
                     angles_T[-1].append(angles_T[-1][-1])
                 i += 1
-    print(counter)
-    return replicas, Es_T, Ms_T, angles_T, temperatures_bookkeeping
+    return replicas, Es_T, Ms_T, angles_T, temperatures_bookkeeping, counter
 
 def plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
     cVs = []
@@ -279,19 +278,20 @@ q = 5
 J = 1
 T = 0.8
 Ts = np.array([0.6 + i*0.05 for i in range(10)])
-sweeps = 1000000
-data_start = 1250000
+hits = 1000000
+data_start = 500000
 
 
 # parallel tempering # #
 t0 = time.time()
-fields, Es_T, Ms_T, angles_T, temperatures_bookkeeping = parallel_tempering(shape, q, J, Ts, sweeps)
+fields, Es_T, Ms_T, angles_T, temperatures_bookkeeping, counter = parallel_tempering(shape, q, J, Ts, hits)
 t1 = time.time()
-print((t1-t0)/60, " min")
+print((t1-t0)/60, " min for the simulation")
+print("%f %% of the times was a temperature-exchange!" %(100/(hits * len(Ts)) * counter))
 
 plots_parallel_tempering(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
 plot_histograms_energy(Es_T, q, Ts)
-plot_parallel_tempering_bookkeeping(np.array(temperatures_bookkeeping)[:, :10])
+plot_parallel_tempering_bookkeeping(np.array(temperatures_bookkeeping)[:, :100])
 
 # # metropolis for phase transition # #
 # t0 = time.time()
