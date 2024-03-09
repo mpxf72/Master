@@ -122,7 +122,7 @@ def phase_transitions(shape, q, J, Ts, sweeps, data_start=800000, kB=1):
     cVs_error = []
     Xis = []
     Xis_error = []
-    for T in Ts:
+    for i, T in enumerate(Ts):
         field, Es, Ms, angles = metropolis(shape, q, J, T, sweeps, kB)
         plot_E_M_a(Es, Ms, angles, q, J, T)
         cV, cV_error = heat_capacity(Es[data_start:], T, kB)
@@ -131,7 +131,7 @@ def phase_transitions(shape, q, J, Ts, sweeps, data_start=800000, kB=1):
         Xi, Xi_error = magnetic_susceptibility(Ms[data_start:], T, kB)
         Xis.append(Xi)
         Xis_error.append(Xi_error)
-        print(100/len(Ts) * (Ts.index(T)+1), " %")
+        print(100/len(Ts) * (i+1), " %")
     fig,axs = plt.subplots(2, 1, constrained_layout=True)
     axs[0].errorbar(Ts, cVs, yerr=cVs_error, fmt='.--', capsize=5, capthick=1)
     axs[0].set_xlabel('T')
@@ -174,6 +174,20 @@ def jackknife_var(dataset, n_blocks=50):
     var_bias = 1/n_blocks * np.sum(jackknife_samples)
     true_var = raw_var - (n_blocks - 1)*(var_bias - raw_var)
     return true_var, sigma
+
+def autocorrelation_t(dataset, t):
+    stop = len(dataset)-t
+    numerator = 0
+    for i in range(0, stop):
+        numerator += dataset[i]*dataset[i+t]
+    numerator *= 1/stop
+    return (numerator - np.average(dataset)**2)/np.var(dataset)
+
+def autocorrelation_time(dataset):
+    tau = 0.5
+    for t in range(1, len(dataset)):
+        tau += autocorrelation_t(dataset, t)
+    return tau
 
 @njit
 def parallel_tempering(shape, q, J, Ts, hits, kB=1):
@@ -317,7 +331,7 @@ print((t3-t2)/60, " min for all plots")
 
 # # metropolis for phase transition # #
 # t0 = time.time()
-# phase_transitions(shape, q, J, Ts, sweeps, data_start)
+# phase_transitions(shape, q, J, Ts, hits, data_start)
 # t1 = time.time()
 # print((t1-t0)/60, " min")
 
