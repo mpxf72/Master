@@ -1,3 +1,4 @@
+
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -53,8 +54,7 @@ def magnetization(config, q):
     '''calculates the magnetization of a configuration'''
     N = config.size
     spin_vectors = np.exp(2j * np.pi * (config - 1) / q)
-    M = np.sum(spin_vectors)
-    M /= N
+    M = 1/N * np.sum(spin_vectors)
     return np.abs(M), np.angle(M)
 
 @njit
@@ -189,38 +189,11 @@ def parallel_tempering(shape, q, J, Ts, hits, kB=1):
     return replicas, Es_T, Ms_T, angles_T, temperatures_bookkeeping, counter
 
 
-## calculation of cV and Xi ##
-
-def heat_capacity(energies, T, kB=1):
-    var, error = jackknife_var(energies)
-    return 1/(kB * T**2) * var, 1/(kB * T**2) * error
-
-def magnetic_susceptibility(magnetizations, T, kB=1):
-    var, error = jackknife_var(magnetizations)
-    return 1/(kB * T) * var, 1/(kB * T) * error
-
-def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T, data_start):
-    cVs = []
-    cVs_error = []
-    Xis = []
-    Xis_error = []
-    t0 = time.time()
-    for E_T, M_T, angle_T, T in zip(Es_T, Ms_T, angles_T, Ts):
-        cV, cV_error = heat_capacity(E_T[data_start:], T)
-        Xi, Xi_error = magnetic_susceptibility(M_T[data_start:], T)
-        cVs.append(cV)
-        cVs_error.append(cV_error)
-        Xis.append(Xi)
-        Xis_error.append(Xi_error)
-    t1 = time.time()
-    print((t1-t0)/60, " min for the calculation of cV and Xi with errors!")
-    return cVs, cVs_error, Xis, Xis_error
-
-
 ## statistics ##
 
-def jackknife_avrg(dataset, n_blocks=10):
-    raw_avrg = np.average(dataset)
+@njit
+def jackknife_avrg(dataset, n_blocks=100):
+    raw_avrg = np.mean(dataset)
     sum_1 = 0
     block_size = len(dataset) // n_blocks
     jackknife_samples = np.empty(n_blocks)
@@ -235,7 +208,8 @@ def jackknife_avrg(dataset, n_blocks=10):
     true_avrg = raw_avrg - (n_blocks - 1)*(avrg_bias - raw_avrg)
     return true_avrg, sigma
 
-def jackknife_var(dataset, n_blocks=50):
+@njit
+def jackknife_var(dataset, n_blocks=100):
     raw_var = np.var(dataset)
     sum_1 = 0
     block_size = len(dataset) // n_blocks
@@ -251,19 +225,62 @@ def jackknife_var(dataset, n_blocks=50):
     true_var = raw_var - (n_blocks - 1)*(var_bias - raw_var)
     return true_var, sigma
 
+@njit
 def autocorrelation_t(dataset, t):
     stop = len(dataset)-t
     numerator = 0
     for i in range(0, stop):
         numerator += dataset[i]*dataset[i+t]
     numerator *= 1/stop
-    return (numerator - np.average(dataset)**2)/np.var(dataset)
+    return (numerator - np.mean(dataset)**2)/np.var(dataset)
 
-def autocorrelation_time(dataset):
+def autocorrelation_ts(datasets, ts):
+    t0 = time.time()
+    Cs = []
+    for i, dataset in enumerate(datasets):
+        Cs.append([])
+        for t in ts:
+            Cs[i].append(autocorrelation_t(dataset, t))
+    t1 = time.time()
+    print((t1-t0)/60, " min for the calculation of autocorrelations!")
+    return Cs
+
+@njit
+def autocorrelation_tau(dataset):
     tau = 0.5
     for t in range(1, len(dataset)):
         tau += autocorrelation_t(dataset, t)
     return tau
+
+
+## calculation of cV and Xi ##
+
+@njit
+def heat_capacity(energies, T, kB=1):
+    var, error = jackknife_var(energies)
+    return 1/(kB * T**2) * var, 1/(kB * T**2) * error
+
+@njit
+def magnetic_susceptibility(magnetizations, T, kB=1):
+    var, error = jackknife_var(magnetizations)
+    return 1/(kB * T) * var, 1/(kB * T) * error
+
+def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T):
+    cVs = []
+    cVs_error = []
+    Xis = []
+    Xis_error = []
+    t0 = time.time()
+    for E_T, M_T, angle_T, T in zip(Es_T, Ms_T, angles_T, Ts):
+        cV, cV_error = heat_capacity(E_T, T)
+        Xi, Xi_error = magnetic_susceptibility(M_T, T)
+        cVs.append(cV)
+        cVs_error.append(cV_error)
+        Xis.append(Xi)
+        Xis_error.append(Xi_error)
+    t1 = time.time()
+    print((t1-t0)/60, " min for the calculation of cV and Xi with errors!")
+    return cVs, cVs_error, Xis, Xis_error
 
 
 ## make plots ##
@@ -285,7 +302,7 @@ def plot_E_M_a(Es, Ms, angles, q, J, T):
     fig.suptitle("q = %g, J = %g, T = %g" %(q, J, T))
 
 def plot_cV_Xi(Ts, cVs, cVs_error, Xis, Xis_error):
-    fig,axs = plt.subplots(2, 1, constrained_layout=True)
+    fig,axs = plt.subplots(2, 1, constrained_layout=True, dpi=150)
     axs[0].errorbar(Ts, cVs, yerr=cVs_error, fmt='.--', capsize=5, capthick=1)
     axs[0].set_xlabel('T')
     axs[0].set_ylabel('c_V')
@@ -307,9 +324,9 @@ def plot_parallel_tempering_bookkeeping(Temperatures):
     plt.legend()
     plt.show()
 
-def plot_histogram_energy(Es, q, T, bins=100):
+def plot_histogram_energy(Es, q, T, bins=200):
     fig = plt.figure(dpi=150)
-    plt.hist(Es[data_start:], bins=bins)
+    plt.hist(Es, bins=bins)
     plt.title('histogram, q = %g, T = %f' %(q, T))
     plt.xlabel('energy')
     plt.show()
@@ -327,7 +344,21 @@ def plot_magnetic_components(configs, Ts, q):
     plt.ylabel('# of the same component')
     plt.show()
 
-def make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T, cVs, cVs_error, Xis, Xis_error, data_start, temp_book=None, parallel_bookkeeping=False, trends=True, cV_Xi=True, hist=True, mag_com=True):
+def plot_autocorrelation(Ts, ts, Cs):
+    fig = plt.figure(dpi=150)
+    for T, Cs_T in zip(Ts, Cs):
+        plt.plot(ts, Cs_T, '.--', label='T = %g' %T)
+    plt.title('Autocorrelation of Energies')
+    plt.xlabel('monte carlo step')
+    plt.ylabel('autocorrelation')
+    plt.legend()
+    plt.show()
+
+def make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
+               Es_T_data, Ms_T_data, angles_T_data,
+               cVs=None, cVs_error=None, Xis=None, Xis_error=None,
+               ts=None, Cs=None, temp_book=None, parallel_bookkeeping=False,
+               trends=True, cV_Xi=False, hist=True, mag_com=True, autocorr=False):
     t0 = time.time()
     if parallel_bookkeeping:
         plot_parallel_tempering_bookkeeping(np.array(temp_book)[:, :100])
@@ -337,10 +368,12 @@ def make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T, cVs, cVs_error, Xis, Xis_
     if cV_Xi:
         plot_cV_Xi(Ts, cVs, cVs_error, Xis, Xis_error)
     if hist:
-        for Es, T in zip(Es_T, Ts):
+        for Es, T in zip(Es_T_data, Ts):
             plot_histogram_energy(Es, q, T)
     if mag_com:
         plot_magnetic_components(fields, Ts, q)
+    if autocorr:
+        plot_autocorrelation(Ts, ts, Cs)
     t1 = time.time()
     print((t1-t0)/60, " min for all plots")
 
@@ -351,22 +384,39 @@ shape = (20, 20)
 q = 5
 J = 1
 Ts = np.array([0.6 + i*0.05 for i in range(10)])
-hits = 1000000
+hits = 1500000
 data_start = 500000
+ts = [1000, 2000, 4000, 6000, 8000, 10000, 15000, 20000, 35000, 50000, 70000, 100000]
 
 
 ## single-metropolis or parallel tempering ##
 
-# parallel tempering # 
-fields, Es_T, Ms_T, angles_T, temperatures_bookkeeping = parallel_tempering_with_time(shape, q, J, Ts, hits)
-cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
-make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T, cVs, cVs_error, Xis, Xis_error, data_start, temp_book=temperatures_bookkeeping, parallel_bookkeeping=True)
+#  tempering # 
+fields, Es_T, Ms_T, angles_T, temp_book = parallel_tempering_with_time(shape, q, J, Ts, hits)
+
+Es_T_data, Ms_T_data, angles_T_data =  np.array(Es_T)[:, data_start:], np.array(Es_T)[:, data_start:], np.array(Es_T)[:, data_start:]
+
+cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, Es_T_data, Ms_T_data, angles_T_data)
+Cs = autocorrelation_ts(Es_T_data, ts)
+
+make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
+           Es_T_data, Ms_T_data, angles_T_data,
+           cVs=cVs, cVs_error=cVs_error, Xis=Xis, Xis_error=Xis_error,
+           ts=ts, Cs=Cs, temp_book=temp_book, parallel_bookkeeping=True,
+           trends=True, cV_Xi=True, hist=True, mag_com=True, autocorr=True)
+
 
 
 # metropolis for phase transition #
 # fields, Es_T, Ms_T, angles_T = single_metropolis_Ts(shape, q, J, Ts, hits)
+
 # cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
-# make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T, cVs, cVs_error, Xis, Xis_error, data_start)
+# Cs = autocorrelation_ts(Es_T, ts)
+
+# make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T, data_start,
+#             cVs=cVs, cVs_error=cVs_error, Xis=Xis, Xis_error=Xis_error,
+#             ts=ts, Cs=Cs, parallel_bookkeeping=False,
+#             trends=True, cV_Xi=True, hist=True, mag_com=True, autocorr=True)
 
 
 ## metropolis with one Temperature ##
@@ -387,5 +437,4 @@ make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T, cVs, cVs_error, Xis, Xis_erro
 # print(Xi)
 
 # plot_histogram_energy(Es, q, T)
-
 
