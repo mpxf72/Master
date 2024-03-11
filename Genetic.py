@@ -42,7 +42,7 @@ def get_distance(D_M, permutation):
     return d 
         
 # @jit
-def genetic_code(D_M, mu_rate = 0.03, ma_rate = 1, kill_rate = 0.8, inc_rate = 1, start_pool = 50, sweeps = 1000, mutation = 'True', mating = 'True'): 
+def genetic_code(D_M, mu_rate = 0.6270370370370371, ma_rate = 0.5907407407407407, kill_rate = 0.8, inc_rate = 1, start_pool = 50000, sweeps = 10000, mutation = 'True', mating = 'True'): 
     permutations = []
     N = np.shape(D_M)[0]
     N_list = []
@@ -65,7 +65,7 @@ def genetic_code(D_M, mu_rate = 0.03, ma_rate = 1, kill_rate = 0.8, inc_rate = 1
             for i in range(round(start_pool*mu_rate)): # mutation rate % 
                 ind_1 = np.random.randint(0,start_pool_ - 1)
                 N_list_new = N_list.copy()
-                N_list_new.remove(permutations[ind_1][0])
+                N_list_new.remove(permutations[ind_1][0]) # end and start point doesn't change 
                 ind_2 = np.where(permutations[ind_1] == np.random.choice(N_list_new))[0][0]
                 ind_3 = np.where(permutations[ind_1] == np.random.choice(N_list_new))[0][0]
                 permutations[ind_1][ind_2], permutations[ind_1][ind_3] = permutations[ind_1][ind_3], permutations[ind_1][ind_2]
@@ -77,7 +77,7 @@ def genetic_code(D_M, mu_rate = 0.03, ma_rate = 1, kill_rate = 0.8, inc_rate = 1
                     counting = []
                     for i in child: 
                         counting.append(child.count(i))
-                    if sum(counting) <= 10: 
+                    if sum(counting) <= N: 
                         permutations.append(child)
         for p in permutations:
             d = get_distance(D_M,p)
@@ -98,7 +98,7 @@ def genetic_code(D_M, mu_rate = 0.03, ma_rate = 1, kill_rate = 0.8, inc_rate = 1
     P = permutations[p_end[0][0]]
     return P, min(distance_end)
 
-N = 15
+N = 20
 q_grid = 100
 city_list = city_maker(N, q_grid)   
 D_M = dist_mat(city_list,N)  
@@ -137,25 +137,45 @@ def plotter(cities, permutation, distance):
     plt.ylabel('y')
     plt.title('total distance = %f' % d)
     
-# plotter(city_list, permutation, distance)
+plotter(city_list, permutation, distance)
 
 def get_optimum(D_M, mu_rate, ma_rate): 
     M = np.zeros((len(ma_rate),len(ma_rate)))
     for i in range(len(mu_rate)):
         for j in range(len(ma_rate)): 
             M[i,j] = genetic_code(D_M,i,j)[1]
-    from mpl_toolkits.mplot3d import axes3d
+    mini = np.min(M)
+    M = np.where(M == mini)
+    x = M[0][0]
+    y = M[1][0]
+    return mini, mu_rate[x], ma_rate[y]
+            
+            
+m1 = np.linspace(0.01,0.99,30)  
+n1 = np.linspace(0.01,0.99,30)  
+# print(get_optimum(D_M, m1, n1))
+n_list = [20,40]
 
-    ax = plt.figure().add_subplot(projection='3d')
-    X, Y = np.meshgrid(mu_rate,ma_rate)
-    Z = M[X,Y]
-    ax.plot_surface(X, Y, Z, edgecolor='royalblue', lw=0.5, rstride=8, cstride=8,
-                alpha=0.3)
-            
-            
-m = np.linspace(0.01,0.99,10)  
-n = np.linspace(0.01,0.99,10)  
-get_optimum(D_M, m, m)
+# for n in n_list: 
+#     q_grid = 100
+#     city_list = city_maker(n, q_grid)  
+#     DI = []
+#     MU = []
+#     MA = []
+#     for _ in range(3): 
+#         di, mu_rate, ma_rate = get_optimum(D_M, m1, n1)
+#         DI.append(di)
+#         MU.append(mu_rate)
+#         MA.append(ma_rate)
+#     av_di = np.sum(DI)/3
+#     av_mu = np.sum(MU)/3
+#     av_ma = np.sum(MA)/3
+#     print('N=',n,av_di,av_mu,av_ma)
+        
+    
+    
+    
+    
 
 
 
@@ -313,22 +333,22 @@ def generating_data(dim, N, beta, n_runs, N_s):
     return D_total
 
 dim = 2
-N = 15
+N = 10
 
 beta_min = 1
 beta_max = 200
 deltabeta = 1
 beta_power = 1.3
-# beta = beta(beta_min, beta_max, deltabeta, beta_power)
+beta = beta(beta_min, beta_max, deltabeta, beta_power)
 
-# N_s = 1000
-# M = N_s * len(beta)
-# print("total iterations are M = %g" %M)
+N_s = 1000
+M = N_s * len(beta)
+print("total iterations are M = %g" %M)
 
 
-# ## minimizing a specific path ###
-# city_pos, dis_mat = np.asanyarray(city_list), D_M
-# p, d_total = simulated_annealing(N, dis_mat, beta, N_s, True, city_pos, 5)
+## minimizing a specific path ###
+city_pos, dis_mat = np.asanyarray(city_list), D_M
+p, d_total = simulated_annealing(N, dis_mat, beta, N_s, True, city_pos, 5)
 
 ### calculating average with error ###
 # n_runs = 30
