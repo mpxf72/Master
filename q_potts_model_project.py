@@ -381,9 +381,9 @@ def make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
 ## setting for simulation ##
 
 shape = (20, 20)
-q = 5
+q = 3
 J = 1
-Ts = np.array([0.6 + i*0.05 for i in range(10)])
+Ts = np.array([0.745 + i*0.05 for i in range(10)])
 hits = 1500000
 data_start = 500000
 ts = [1000, 2000, 4000, 6000, 8000, 10000, 15000, 20000, 35000, 50000, 70000, 100000]

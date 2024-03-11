@@ -163,13 +163,13 @@ print("total iterations are M = %g" %M)
 
 
 ### minimizing a specific path ###
-city_pos, dis_mat = generate_map(dim, N)
-p, d_total = simulated_annealing(N, dis_mat, beta, N_s, True, city_pos, 5)
+# city_pos, dis_mat = generate_map(dim, N)
+# p, d_total = simulated_annealing(N, dis_mat, beta, N_s, True, city_pos, 5)
 
 ### calculating average with error ###
-# n_runs = 30
-# dataset = generating_data(dim, N, beta, n_runs, N_s)
-# D_average, sigma = jackknife(dataset)
-# print("average minimal path lenght is %.3f ± %.3f" %(D_average, sigma))
+n_runs = 30
+dataset = generating_data(dim, N, beta, n_runs, N_s)
+D_average, sigma = jackknife(dataset)
+print("average minimal path lenght is %.3f ± %.3f" %(D_average, sigma))
 
 
