@@ -2,7 +2,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-import glob
 from matplotlib import cm
 import time
 from numba import njit
@@ -147,7 +146,7 @@ def parallel_tempering(shape, q, J, Ts, hits, kB=1):
         Ms_T.append([M_T])
         angles_T.append([angle_T])
     for hit in range(hits):
-        print(100/hits * hit, " %")
+        print(round(100/hits * hit, 1), " %")
         for i, T in enumerate(Ts):
             replicas[i], delta_E = metropolis_local(replicas[i], J, T, q)
             Es_T[i].append(Es_T[i][-1] + delta_E)
@@ -282,6 +281,18 @@ def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T):
     print((t1-t0)/60, " min for the calculation of cV and Xi with errors!")
     return cVs, cVs_error, Xis, Xis_error
 
+def calc_Os(data_Ts, string):
+    O_Ts = []
+    O_Ts_error = []
+    t0 = time.time()
+    for data_T in data_Ts:
+        O_T, O_T_error = jackknife_avrg(data_T)
+        O_Ts.append(O_T)
+        O_Ts_error.append(O_T_error)
+    t1 = time.time()
+    print((t1-t0)/60, " min for the calculation of " + string + " with errors!")
+    return O_Ts, O_Ts_error
+
 
 ## make plots ##
 
@@ -290,26 +301,34 @@ def plot_E_M_a(Es, Ms, angles, q, J, T):
     axs[0].plot(Es, '.',markersize=0.2)
     axs[0].set_xlabel('iterations')
     axs[0].set_title('Energy-Trend')
-    axs[0].set_ylabel('Energy')
+    axs[0].set_ylabel('energy')
     axs[1].plot(Ms, '.',markersize=0.2)
     axs[1].set_xlabel('iterations')
     axs[1].set_title('Magnetic-Trend')
-    axs[1].set_ylabel('Magnetisation')
+    axs[1].set_ylabel('magnetization')
     axs[2].plot(angles, '.',markersize=0.2)
     axs[2].set_xlabel('iterations')
     axs[2].set_title('Magnetic-Direction-Trend')
-    axs[2].set_ylabel('Direction')
+    axs[2].set_ylabel('direction')
     fig.suptitle("q = %g, J = %g, T = %g" %(q, J, T))
 
-def plot_cV_Xi(Ts, cVs, cVs_error, Xis, Xis_error):
+def plot_cV_Xi(q, J, Ts, cVs, cVs_error, Xis, Xis_error):
     fig,axs = plt.subplots(2, 1, constrained_layout=True, dpi=150)
+    fig.suptitle("susceptibilities, q = %g, J = %g" %(q, J))
     axs[0].errorbar(Ts, cVs, yerr=cVs_error, fmt='.--', capsize=5, capthick=1)
-    axs[0].set_xlabel('T')
+    axs[0].set_xlabel('temperature')
     axs[0].set_ylabel('c_V')
     axs[1].errorbar(Ts, Xis, yerr=Xis_error, fmt='.--', capsize=5, capthick=1)
-    axs[1].set_xlabel('T')
+    axs[1].set_xlabel('temperature')
     axs[1].set_ylabel('Xi')
-    plt.title("q = %g, J = %g" %(q, J))
+    plt.show()
+
+def plot_O_over_T(q, J, Ts, Os, Os_error, string):
+    fig = plt.figure(dpi=150)
+    plt.errorbar(Ts, Os, yerr=Os_error, fmt='.--', capsize=5, capthick=1)
+    plt.xlabel('temperature')
+    plt.ylabel(string)
+    plt.title(string + " q = %g, J = %g" %(q, J))
     plt.show()
 
 def plot_parallel_tempering_bookkeeping(Temperatures):
@@ -318,20 +337,20 @@ def plot_parallel_tempering_bookkeeping(Temperatures):
     fig = plt.figure(dpi=150)
     for i in range(num_simulations):
         plt.plot(range(num_steps), Temperatures[i], ".--", label=f'replica {i + 1}')
-    plt.xlabel('Simulation Time')
-    plt.ylabel('Temperature')
+    plt.xlabel('simulation time')
+    plt.ylabel('temperature')
     plt.title('Parallel Tempering - Evolution of Temperatures of the replicas')
     plt.legend()
     plt.show()
 
-def plot_histogram_energy(Es, q, T, bins=200):
+def plot_histogram_energy(Es, q, J, T, bins=200):
     fig = plt.figure(dpi=150)
     plt.hist(Es, bins=bins)
-    plt.title('histogram, q = %g, T = %f' %(q, T))
+    plt.title('Histogram, q = %g, J = %g, T = %f' %(q, J, T))
     plt.xlabel('energy')
     plt.show()
 
-def plot_magnetic_components(configs, Ts, q):
+def plot_magnetic_components(configs, Ts, q, J):
     Ys = []
     fig = plt.figure(dpi=150)
     for config in configs:
@@ -339,7 +358,7 @@ def plot_magnetic_components(configs, Ts, q):
         Ys.append(sorted(components))
     for i in range(len(Ys[0])):
         plt.plot(Ts, np.array(Ys)[:, i], '.--')
-    plt.title('components of magnetization, q = %g' %q)
+    plt.title('components of magnetization, q = %g, J = %g' %(q, J))
     plt.xlabel('temperature')
     plt.ylabel('# of the same component')
     plt.show()
@@ -356,24 +375,33 @@ def plot_autocorrelation(Ts, ts, Cs):
 
 def make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
                Es_T_data, Ms_T_data, angles_T_data,
-               cVs=None, cVs_error=None, Xis=None, Xis_error=None,
-               ts=None, Cs=None, temp_book=None, parallel_bookkeeping=False,
-               trends=True, cV_Xi=False, hist=True, mag_com=True, autocorr=False):
+               mag_com=True,
+               Ms=None, Ms_error=None, mag=False,
+               Us=None, Us_error=None, inner_energy=False,
+               cVs=None, cVs_error=None, Xis=None, Xis_error=None, cV_Xi=False,
+               temp_book=None, parallel_bookkeeping=False,
+               ts=None, Cs=None, autocorr=False,
+               t_h_list=[0, -1], trends=False, hist=False):
     t0 = time.time()
-    if parallel_bookkeeping:
-        plot_parallel_tempering_bookkeeping(np.array(temp_book)[:, :100])
-    if trends:
-        for E_T, M_T, angle_T, T in zip(Es_T, Ms_T, angles_T, Ts):
-            plot_E_M_a(E_T, M_T, angle_T, q, J, T)
-    if cV_Xi:
-        plot_cV_Xi(Ts, cVs, cVs_error, Xis, Xis_error)
-    if hist:
-        for Es, T in zip(Es_T_data, Ts):
-            plot_histogram_energy(Es, q, T)
     if mag_com:
-        plot_magnetic_components(fields, Ts, q)
+        plot_magnetic_components(fields, Ts, q, J)
+    if mag:
+        plot_O_over_T(q, J, Ts, Ms, Ms_error, "magnetization")
+    if inner_energy:
+        plot_O_over_T(q, J, Ts, Us, Us_error, "inner energy")
+    if cV_Xi:
+        plot_cV_Xi(q, J, Ts, cVs, cVs_error, Xis, Xis_error)
+    if parallel_bookkeeping:
+        plot_parallel_tempering_bookkeeping(np.array(temp_book)[:, :20])
     if autocorr:
         plot_autocorrelation(Ts, ts, Cs)
+    if hist:
+        for Es, T in zip(Es_T_data[t_h_list[0]:t_h_list[1]], Ts[t_h_list[0]:t_h_list[1]]):
+            plot_histogram_energy(Es, q, J, T)
+    if trends:
+        for E_T, M_T, angle_T, T in zip(Es_T[t_h_list[0]:t_h_list[1]], Ms_T[t_h_list[0]:t_h_list[1]],
+                                        angles_T[t_h_list[0]:t_h_list[1]], Ts[t_h_list[0]:t_h_list[1]]):
+            plot_E_M_a(E_T, M_T, angle_T, q, J, T)
     t1 = time.time()
     print((t1-t0)/60, " min for all plots")
 
@@ -381,46 +409,65 @@ def make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
 ## setting for simulation ##
 
 shape = (20, 20)
-q = 3
+q = 2
 J = 1
-Ts = np.array([0.745 + i*0.05 for i in range(10)])
-hits = 1500000
+Ts = np.array([0.890 + i*0.035 for i in range(15)])
+hits = 3000000
 data_start = 500000
-ts = [1000, 2000, 4000, 6000, 8000, 10000, 15000, 20000, 35000, 50000, 70000, 100000]
+ts = [4, 8, 16, 32, 64, 128, 256, 512]
 
 
 ## single-metropolis or parallel tempering ##
 
-#  tempering # 
-fields, Es_T, Ms_T, angles_T, temp_book = parallel_tempering_with_time(shape, q, J, Ts, hits)
+# parallel tempering # 
+fields, Es_T, Ms_T, angles_T, temp_book = parallel_tempering_with_time(shape, q, J, Ts, int(hits/2))
 
-Es_T_data, Ms_T_data, angles_T_data =  np.array(Es_T)[:, data_start:], np.array(Es_T)[:, data_start:], np.array(Es_T)[:, data_start:]
+Es_T_data, Ms_T_data, angles_T_data =  np.array(Es_T)[:, data_start:], np.array(Ms_T)[:, data_start:], np.array(angles_T)[:, data_start:]
+Es_T_data_uncorr = Es_T_data#[:, ::100]
+Ms_T_data_uncorr = Ms_T_data#[:, ::100]
+angles_T_data_uncorr = angles_T_data#[:, ::100]
 
-cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, Es_T_data, Ms_T_data, angles_T_data)
+Us, Us_error = calc_Os(Es_T_data_uncorr, "inner energy")
+Ms, Ms_error = calc_Os(Ms_T_data_uncorr, "magnetization")
+cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, Es_T_data_uncorr, Ms_T_data_uncorr, angles_T_data_uncorr)
 Cs = autocorrelation_ts(Es_T_data, ts)
 
+t_h_list = [5, 8]
 make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
-           Es_T_data, Ms_T_data, angles_T_data,
-           cVs=cVs, cVs_error=cVs_error, Xis=Xis, Xis_error=Xis_error,
-           ts=ts, Cs=Cs, temp_book=temp_book, parallel_bookkeeping=True,
-           trends=True, cV_Xi=True, hist=True, mag_com=True, autocorr=True)
-
-
+            Es_T_data_uncorr, Ms_T_data_uncorr, angles_T_data_uncorr,
+            mag_com=True,
+            Ms=Ms, Ms_error=Ms_error, mag=True,
+            Us=Us, Us_error=Us_error, inner_energy=True,
+            cVs=cVs, cVs_error=cVs_error, Xis=Xis, Xis_error=Xis_error, cV_Xi=True,
+            temp_book=temp_book, parallel_bookkeeping=True,
+            ts=ts, Cs=Cs, autocorr=True,
+            t_h_list=t_h_list, trends=True,  hist=True)
 
 # metropolis for phase transition #
 # fields, Es_T, Ms_T, angles_T = single_metropolis_Ts(shape, q, J, Ts, hits)
 
-# cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T, data_start)
-# Cs = autocorrelation_ts(Es_T, ts)
+# Es_T_data, Ms_T_data, angles_T_data =  np.array(Es_T)[:, data_start:], np.array(Ms_T)[:, data_start:], np.array(angles_T)[:, data_start:]
+# Es_T_data_uncorr = Es_T_data#[:, ::100]
+# Ms_T_data_uncorr = Ms_T_data#[:, ::100]
+# angles_T_data_uncorr = angles_T_data#[:, ::100]
 
-# make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T, data_start,
-#             cVs=cVs, cVs_error=cVs_error, Xis=Xis, Xis_error=Xis_error,
-#             ts=ts, Cs=Cs, parallel_bookkeeping=False,
-#             trends=True, cV_Xi=True, hist=True, mag_com=True, autocorr=True)
+# Us, Us_error = calc_Os(Es_T_data_uncorr, "inner energy")
+# Ms, Ms_error = calc_Os(Ms_T_data_uncorr, "magnetization")
+# cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, Es_T_data_uncorr, Ms_T_data_uncorr, angles_T_data_uncorr)
+# Cs = autocorrelation_ts(Es_T_data, ts)
 
+# t_h_list = [5, 8]
+# make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
+#            Es_T_data_uncorr, Ms_T_data_uncorr, angles_T_data_uncorr,
+#            mag_com=True,
+#            Ms=Ms, Ms_error=Ms_error, mag=True,
+#            Us=Us, Us_error=Us_error, inner_energy=True,
+#            cVs=cVs, cVs_error=cVs_error, Xis=Xis, Xis_error=Xis_error, cV_Xi=True,
+#            temp_book=None, parallel_bookkeeping=False,
+#            ts=ts, Cs=Cs, autocorr=True,
+#            t_h_list=t_h_list, trends=True,  hist=True)
 
-## metropolis with one Temperature ##
-
+# metropolis with one Temperature #
 # T = 0.7
 # t0 = time.time()
 # field, Es, Ms, angles = metropolis(shape, q, J, T, hits)
