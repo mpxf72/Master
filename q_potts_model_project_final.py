@@ -1,3 +1,4 @@
+# import required bibliograghies
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,9 +12,11 @@ from numba import njit
 
 @njit
 def initialize_lattice(shape, q):
+    '''initialize a random lattice in the q-Potts-model'''
     return np.random.randint(1, q+1, size=shape)
 
 def show_config(config, q): 
+    '''shows the lattice graphically'''
     normalized_config = config/q
     pic = Image.fromarray(np.uint8(cm.gist_rainbow(normalized_config)*255)) #toplogical colours with gist_earth
     pic.show()
@@ -33,24 +36,23 @@ def energy_local(config, site_pos, J):
 
 @njit
 def energy(config, J):
-    '''calculates the energy of a configuration'''
+    '''calculates the energy of a lattice configuration'''
     d1, d2 = np.shape(config)[0], np.shape(config)[1]
     nn_interaction_term = 0
     for i in range(d1): 
-        for j in range(d2): # creates sum over all spins 
+        for j in range(d2):
             site_spin = config[i ,j]
-            nn = [config[(i+1) % d1, j], config[i, (j+1) % d2]] # additional sum over next nearest neighbours 
+            nn = [config[(i+1) % d1, j], config[i, (j+1) % d2]]
             site_interaction = 0 
             for e in nn:
                 if site_spin == e:
                     site_interaction += 1
-            #site_interaction = np.sum(np.equal(site_spin, nn))
             nn_interaction_term += site_interaction
     return -J*nn_interaction_term
 
 @njit
 def magnetization(config, q):
-    '''calculates the magnetization of a configuration'''
+    '''calculates the total magnetization of a lattice configuration'''
     N = config.size
     spin_vectors = np.exp(2j * np.pi * (config - 1) / q)
     M = 1/N * np.sum(spin_vectors)
@@ -58,6 +60,7 @@ def magnetization(config, q):
 
 @njit
 def magnetization_components(config, q):
+    '''calculates the number of each component of the magnetization of lattice configuration'''
     components = []
     for qi in range(1, q+1):
         components.append(np.sum(config == qi))
@@ -68,6 +71,7 @@ def magnetization_components(config, q):
 
 @njit
 def metropolis_local(config, J, T, q, kB=1):
+    '''local metropolis algorithm for one random site'''
     i, j = np.random.randint(0, config.shape[0]), np.random.randint(0, config.shape[1])
     proposed_config = np.copy(config)
     proposed_config[i, j] = np.random.randint(1, q+1)
@@ -79,6 +83,7 @@ def metropolis_local(config, J, T, q, kB=1):
 
 @njit
 def metropolis(shape, q, J, T, sweeps, kB=1):
+    '''single metropolis algorithm which uses the local metropolis algorithm'''
     config = initialize_lattice(shape, q)
     E = energy(config, J)
     Es = [E]
@@ -107,6 +112,7 @@ def metropolis(shape, q, J, T, sweeps, kB=1):
     return config, Es, Ms, angles, comps
 
 def single_metropolis_Ts(shape, q, J, Ts, sweeps, kB=1):
+    '''runs the Metropolis algorithm at different temperatures, collects the data and measures the time'''
     fields = []
     Es_T = []
     Ms_T = []
@@ -126,6 +132,7 @@ def single_metropolis_Ts(shape, q, J, Ts, sweeps, kB=1):
     return fields, Es_T, Ms_T, angles_T, M_comps_T
 
 def parallel_tempering_with_time(shape, q, J, Ts, sweeps, kB=1):
+    '''runs the parallel tempering algorithm and measures the time'''
     t0 = time.time()
     replicas, Es_T, Ms_T, angles_T, M_components_T, replica_bookkeeping, counter = parallel_tempering(shape, q, J, Ts, sweeps, kB)
     t1 = time.time()
@@ -135,6 +142,7 @@ def parallel_tempering_with_time(shape, q, J, Ts, sweeps, kB=1):
 
 @njit
 def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
+    '''parallel tempering algorithm which uses the local metropolis algorithm'''
     replicas = [initialize_lattice(shape, q) for _ in range(len(Ts))]
     # replicas = [] 
     # same_start = initialize_lattice(shape,q)
@@ -197,6 +205,7 @@ def parallel_tempering(shape, q, J, Ts, sweeps, kB=1):
 
 @njit
 def jackknife_avrg(dataset, n_blocks=50):
+    '''jackknife method to calculate averages'''
     raw_avrg = np.mean(dataset)
     sum_1 = 0
     block_size = len(dataset) // n_blocks
@@ -214,6 +223,7 @@ def jackknife_avrg(dataset, n_blocks=50):
 
 @njit
 def jackknife_var(dataset, n_blocks=50):
+    '''jackknife method to calculate variances'''
     raw_var = np.var(dataset)
     sum_1 = 0
     block_size = len(dataset) // n_blocks
@@ -231,6 +241,7 @@ def jackknife_var(dataset, n_blocks=50):
 
 @njit
 def autocorrelation_t(dataset, t):
+    '''calculates the autocorrelation of two datapoints which are separated by t data-elements'''
     stop = len(dataset)-t
     numerator = 0
     for i in range(0, stop):
@@ -239,6 +250,7 @@ def autocorrelation_t(dataset, t):
     return (numerator - np.mean(dataset)**2)/np.var(dataset)
 
 def autocorrelation_ts(datasets, ts):
+    '''uses the autocorrelation_t function to calculate the autocorrelation for different t'''
     t0 = time.time()
     Cs = []
     for i, dataset in enumerate(datasets):
@@ -251,6 +263,7 @@ def autocorrelation_ts(datasets, ts):
 
 @njit
 def autocorrelation_tau(dataset):
+    '''calculates the the autocorrelation tau'''
     tau = 0.5
     for t in range(1, len(dataset)):
         tau += autocorrelation_t(dataset, t)
@@ -261,15 +274,18 @@ def autocorrelation_tau(dataset):
 
 @njit
 def heat_capacity(energies, T, kB=1):
+    '''uses the jackknive_var function to calculate the heat capacity'''
     var, error = jackknife_var(energies)
     return 1/(kB * T**2) * var, 1/(kB * T**2) * error
 
 @njit
 def magnetic_susceptibility(magnetizations, T, kB=1):
+    '''uses the jackknive_var function to calculate the magnetic susceptibility'''
     var, error = jackknife_var(magnetizations)
     return 1/(kB * T) * var, 1/(kB * T) * error
 
 def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T):
+    '''uses the heat_capacity and the magnetic_susceptibility function to calculate the susceptibilities for different temperatures'''
     cVs = []
     cVs_error = []
     Xis = []
@@ -287,6 +303,7 @@ def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T):
     return cVs, cVs_error, Xis, Xis_error
 
 def calc_Os(data_Ts, string):
+    '''uses the jackknive_avrg function to calculate some observables at different temperatures'''
     O_Ts = []
     O_Ts_error = []
     t0 = time.time()
@@ -299,6 +316,7 @@ def calc_Os(data_Ts, string):
     return O_Ts, O_Ts_error
 
 def calc_components(q, data_Ts):
+    '''uses the jackknive_avrg function to calculate the components of the magnetization'''
     M_comp_Ts = []
     M_comp_Ts_error = []
     t0 = time.time()
@@ -318,6 +336,7 @@ def calc_components(q, data_Ts):
 ## make plots ##
 
 def plot_E_M_a(Es, Ms, angles, q, J, T):
+    '''plots the Energy, Magnetization and it's direction with respect to simulation time'''
     fig,axs = plt.subplots(3, 1, constrained_layout=True, dpi=150)
     axs[0].plot(Es, '.',markersize=0.2)
     axs[0].set_xlabel('iterations')
@@ -334,6 +353,7 @@ def plot_E_M_a(Es, Ms, angles, q, J, T):
     fig.suptitle("q = %g, J = %g, T = %g" %(q, J, T))
 
 def plot_cV_Xi(q, J, Ts, cVs, cVs_error, Xis, Xis_error):
+    '''plots the susceptibilities with respect to temperature'''
     fig,axs = plt.subplots(2, 1, constrained_layout=True, dpi=150)
     fig.suptitle("susceptibilities, q = %g, J = %g" %(q, J))
     axs[0].errorbar(Ts, cVs, yerr=cVs_error, fmt='.--', capsize=5, capthick=1)
@@ -345,6 +365,7 @@ def plot_cV_Xi(q, J, Ts, cVs, cVs_error, Xis, Xis_error):
     plt.show()
 
 def plot_O_over_T(q, J, Ts, Os, Os_error, string):
+    '''plots some observable with respect to temperature'''
     fig = plt.figure(dpi=150)
     plt.errorbar(Ts, Os, yerr=Os_error, fmt='.--', capsize=5, capthick=1)
     plt.xlabel('temperature')
@@ -353,6 +374,7 @@ def plot_O_over_T(q, J, Ts, Os, Os_error, string):
     plt.show()
 
 def plot_parallel_tempering_bookkeeping(replicas_Ts):
+    '''plots the temperature exchange of the replicas with respect to simulation time'''
     colors = {}
     X = []
     Y = []
@@ -392,6 +414,7 @@ def plot_parallel_tempering_bookkeeping(replicas_Ts):
     plt.show()
 
 def plot_histogram_Os(Os, q, J, T, string, bins=200):
+    '''makes a histogram of some observable'''
     fig = plt.figure(dpi=150)
     plt.hist(Os, bins=bins)
     plt.title('Histogram, q = %g, J = %g, T = %f' %(q, J, T))
@@ -399,6 +422,7 @@ def plot_histogram_Os(Os, q, J, T, string, bins=200):
     plt.show()
 
 def plot_magnetic_components(M_comp_Ts, M_comp_Ts_error, Ts, q, J):
+    '''plots the number of each component of the magnetization with respect to temperature'''
     fig = plt.figure(dpi=150)
     for i in range(len(M_comp_Ts[0])):
         plt.errorbar(Ts, np.array(M_comp_Ts)[:, i], yerr=np.array(M_comp_Ts_error)[:, i], fmt='.--', capsize=5, capthick=1)
@@ -408,6 +432,7 @@ def plot_magnetic_components(M_comp_Ts, M_comp_Ts_error, Ts, q, J):
     plt.show()
 
 def plot_autocorrelation(Ts, ts, Cs):
+    '''plots the autocorrelation of the dataset for different spacings ts'''
     fig = plt.figure(dpi=150)
     for T, Cs_T in zip(Ts, Cs):
         plt.plot(ts, Cs_T, '.--', label='T = %g' %T)
@@ -426,6 +451,7 @@ def make_plots(q, J, Ts, fields, Es_T, Ms_T, angles_T,
                temp_book=None, parallel_bookkeeping=False,
                ts=None, Cs=None, autocorr=False,
                t_h_list=[0, -1], trends=False, hist=False):
+    '''compact function to make plots'''
     t0 = time.time()
     if mag_com:
         plot_magnetic_components(M_comps, M_comps_error, Ts, q, J)
