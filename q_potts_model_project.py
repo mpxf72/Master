@@ -205,7 +205,7 @@ def parallel_tempering(shape, q, J, Ts, sweeps, j, N, kB=1):
                 if i == len(Ts)-2:
                     replica_bookkeeping[-1].append(replica_bookkeeping[-1][-1])
                 i += 1
-        print(round(100/(N*sweeps) * (sweep+j*sweeps), 1), " %")
+        print(round(100/(N*sweeps) * (sweep+j*sweeps), 3), " %")
     for counter_for_acceptance_rate in counter_for_acceptance_rate_T:
         accep_rate_T.append(100/(sweeps*shape[0]*shape[1]) * counter_for_acceptance_rate)
     return replicas, Es_T, Ms_T, angles_T, M_components_T, replica_bookkeeping, counter, accep_rate_T
@@ -701,7 +701,7 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
 if __name__=='__main__':
 
     # setting for simulation
-    shapes = [(10, 10), (20, 20)]
+    shapes = [(10, 10), (15, 15), (20, 20)]
     q = 5
     J = 1
     Ts = np.array([0.83, 0.84, 0.845, 0.848, 0.85, 0.852, 0.854, 0.856, 0.858, 0.86, 0.862, 0.865, 0.87, 0.88])
