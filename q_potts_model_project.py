@@ -77,9 +77,9 @@ def metropolis_local(config, J, T, q, kB=1):
     proposed_config[i, j] = np.random.randint(1, q+1)
     proposed_delta_energy = energy_local(proposed_config, [i, j], J) - energy_local(config, [i, j], J)
     if np.random.rand() < np.exp(-(proposed_delta_energy)/(kB*T)):
-        return proposed_config, proposed_delta_energy
+        return proposed_config, proposed_delta_energy, 1
     else:
-        return config, 0
+        return config, 0, 0
 
 @njit
 def metropolis(shape, q, J, T, sweeps, kB=1):
@@ -92,11 +92,13 @@ def metropolis(shape, q, J, T, sweeps, kB=1):
     angles = [angle]
     comps = [magnetization_components(config, q)]
     counter = 1
+    counter_for_acceptance_rate = 0
     while counter < sweeps:
         deltaE_total = 0
         for _ in range(shape[0]*shape[1]):
-            config, delta_E = metropolis_local(config, J, T, q)
+            config, delta_E, c = metropolis_local(config, J, T, q)
             deltaE_total += delta_E
+            counter_for_acceptance_rate += c
         # if counter%20 == 0:
         #     normalized_config = config/q
         #     pic = Image.fromarray(np.uint8(cm.gist_rainbow(normalized_config)*255))
@@ -108,7 +110,8 @@ def metropolis(shape, q, J, T, sweeps, kB=1):
         comps.append(magnetization_components(config, q))
         counter += 1
         # print(100/hits * counter, " %")
-    return config, Es, Ms, angles, comps
+    accep_rate = 100/(sweeps*shape[0]*shape[1]) * counter_for_acceptance_rate
+    return config, Es, Ms, angles, comps, accep_rate
 
 def single_metropolis_Ts(shape, q, J, Ts, sweeps, j, N, kB=1):
     '''runs the Metropolis algorithm at different temperatures, collects the data and measures the time'''
@@ -117,18 +120,20 @@ def single_metropolis_Ts(shape, q, J, Ts, sweeps, j, N, kB=1):
     Ms_T = []
     angles_T = []
     M_comps_T = []
+    accep_rate_T = []
     # t0 = time.time()
     for i, T in enumerate(Ts):
-        field, Es, Ms, angles, M_comps = metropolis(shape, q, J, T, sweeps, kB)
+        field, Es, Ms, angles, M_comps, accep_rate = metropolis(shape, q, J, T, sweeps, kB)
         fields.append(field)
         Es_T.append(Es)
         Ms_T.append(Ms)
         angles_T.append(angles)
         M_comps_T.append(M_comps)
+        accep_rate_T.append(accep_rate)
         print(round(100/(N*len(Ts)) * (i+1+len(Ts)*j), 1), " %")
     # t1 = time.time()
     # print((t1-t0)/60, " min for the simulation")
-    return fields, Es_T, Ms_T, angles_T, M_comps_T
+    return fields, Es_T, Ms_T, angles_T, M_comps_T, accep_rate_T
 
 def parallel_tempering_with_time(shape, q, J, Ts, sweeps, j, N, kB=1):
     '''runs the parallel tempering algorithm and measures the time'''
@@ -153,6 +158,8 @@ def parallel_tempering(shape, q, J, Ts, sweeps, j, N, kB=1):
     Ms_T = []
     angles_T = []
     M_components_T = []
+    counter_for_acceptance_rate_T = []
+    accep_rate_T = []
     for i, T in enumerate(Ts):
         replica_bookkeeping.append([T])
         Es_T.append([energy(replicas[i], J)])
@@ -160,12 +167,14 @@ def parallel_tempering(shape, q, J, Ts, sweeps, j, N, kB=1):
         Ms_T.append([M_T])
         angles_T.append([angle_T])
         M_components_T.append([magnetization_components(replicas[i], q)])
+        counter_for_acceptance_rate_T.append(0)
     for sweep in range(sweeps):
         for i, T in enumerate(Ts):
             deltaE_total = 0
             for _ in range(int(shape[0]*shape[1])):
-                replicas[i], delta_E = metropolis_local(replicas[i], J, T, q)
+                replicas[i], delta_E, c = metropolis_local(replicas[i], J, T, q)
                 deltaE_total += delta_E
+                counter_for_acceptance_rate_T[i] += c
             Es_T[i].append(Es_T[i][-1] + deltaE_total)
             M_T, angle_T = magnetization(replicas[i], q)
             Ms_T[i].append(M_T)
@@ -197,7 +206,9 @@ def parallel_tempering(shape, q, J, Ts, sweeps, j, N, kB=1):
                     replica_bookkeeping[-1].append(replica_bookkeeping[-1][-1])
                 i += 1
         print(round(100/(N*sweeps) * (sweep+j*sweeps), 1), " %")
-    return replicas, Es_T, Ms_T, angles_T, M_components_T, replica_bookkeeping, counter
+    for counter_for_acceptance_rate in counter_for_acceptance_rate_T:
+        accep_rate_T.append(100/(sweeps*shape[0]*shape[1]) * counter_for_acceptance_rate)
+    return replicas, Es_T, Ms_T, angles_T, M_components_T, replica_bookkeeping, counter, accep_rate_T
 
 
 ## statistics ##
@@ -356,7 +367,7 @@ def calc_components(q, data_Ts):
 
 ## make plots ##
 
-def plot_E_M_a(Es, Ms, angles, shape, method, q, J, T, folder, savefigs):
+def plot_E_M_a(Es, Ms, angles, shape, method, q, J, T, folder, savefigs, openfigs):
     '''plots the Energy, Magnetization and it's direction with respect to simulation time'''
     fig,axs = plt.subplots(3, 1, constrained_layout=True, dpi=150)
     axs[0].plot(Es, '.',markersize=0.2)
@@ -375,9 +386,10 @@ def plot_E_M_a(Es, Ms, angles, shape, method, q, J, T, folder, savefigs):
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\%s_Trends_simulation_%g x %g_q=%g_J=%g_T=%f.png' %(method, shape[0], shape[1], q, J, T), dpi=200, bbox_inches='tight')
+    if not openfigs:
         plt.close()
 
-def plot_cV_Xi(shapes, method, q, J, Ts, CVS, CVS_Error, XIS, XIS_Error, folder, savefigs):
+def plot_cV_Xi(shapes, method, q, J, Ts, CVS, CVS_Error, XIS, XIS_Error, folder, savefigs, openfigs):
     '''plots the susceptibilities with respect to temperature'''
     fig,axs = plt.subplots(2, 1, constrained_layout=True, dpi=150)
     fig.suptitle("%s \n susceptibilities, q = %g, J = %g" %(method, q, J))
@@ -394,9 +406,10 @@ def plot_cV_Xi(shapes, method, q, J, Ts, CVS, CVS_Error, XIS, XIS_Error, folder,
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\%s_susceptibilities_over_temperature_q=%g_J=%g.png' %(method, q, J), dpi=200, bbox_inches='tight')
+    if not openfigs:
         plt.close()
 
-def plot_O_over_T(shapes, method, q, J, Ts, Os, Os_error, string, folder, savefigs):
+def plot_O_over_T(shapes, method, q, J, Ts, Os, Os_error, string, folder, savefigs, openfigs):
     '''plots some observable with respect to temperature'''
     fig = plt.figure(dpi=250)
     for Osi, Osi_error, shape in zip(Os, Os_error, shapes):
@@ -408,9 +421,10 @@ def plot_O_over_T(shapes, method, q, J, Ts, Os, Os_error, string, folder, savefi
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\%s_%s_over_temperature_q=%g_J=%g.png' %(method, string, q, J), dpi=250, bbox_inches='tight')
+    if not openfigs:
         plt.close()
 
-def plot_parallel_tempering_bookkeeping(replicas_Ts, shape, q, J, percentage, folder, savefigs):
+def plot_parallel_tempering_bookkeeping(replicas_Ts, shape, q, J, percentage, folder, savefigs, openfigs):
     '''plots the temperature exchange of the replicas with respect to simulation time'''
     colors = {}
     X = []
@@ -451,9 +465,10 @@ def plot_parallel_tempering_bookkeeping(replicas_Ts, shape, q, J, percentage, fo
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\paralle_bookkeeping_%g x %g_q=%g_J=%g.png' %(shape[0], shape[1], q, J), dpi=200, bbox_inches='tight')
+    if not openfigs:
         plt.close()
 
-def plot_histogram_Os(Os, q, J, T, string, shape, method, folder, savefigs, bins=200):
+def plot_histogram_Os(Os, q, J, T, string, shape, method, folder, savefigs, openfigs, bins=200):
     '''makes a histogram of some observable'''
     fig = plt.figure(dpi=150)
     plt.hist(Os, bins=bins)
@@ -462,9 +477,10 @@ def plot_histogram_Os(Os, q, J, T, string, shape, method, folder, savefigs, bins
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\%s_histogram_%s_%g x %g_q=%g_J=%g_T=%f.png' %(method, string, shape[0], shape[1], q, J, T), dpi=200, bbox_inches='tight')
+    if not openfigs:
         plt.close()
 
-def plot_magnetic_components(M_comp_Ts, M_comp_Ts_error, Ts, q, J, shape, method, folder, savefigs):
+def plot_magnetic_components(M_comp_Ts, M_comp_Ts_error, Ts, q, J, shape, method, folder, savefigs, openfigs):
     '''plots the number of each component of the magnetization with respect to temperature'''
     fig = plt.figure(dpi=150)
     for i in range(len(M_comp_Ts[0])):
@@ -475,9 +491,10 @@ def plot_magnetic_components(M_comp_Ts, M_comp_Ts_error, Ts, q, J, shape, method
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\%s_magnetic_comps_%g x %g_q=%g_J=%g.png' %(method, shape[0], shape[1], q, J), dpi=200, bbox_inches='tight')
+    if not openfigs:
         plt.close()
 
-def plot_autocorrelation(Ts, ts, Cs, Cs_error, q, shape, method, folder, savefigs):
+def plot_autocorrelation(Ts, ts, Cs, Cs_error, q, shape, method, folder, savefigs, openfigs):
     '''plots the autocorrelation of the dataset for different spacings ts'''
     fig = plt.figure(dpi=150)
     for T, Cs_T, Cs_error_T in zip(Ts, Cs, Cs_error):
@@ -489,6 +506,7 @@ def plot_autocorrelation(Ts, ts, Cs, Cs_error, q, shape, method, folder, savefig
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\%s_autocorrelation_%g x %g_q=%g.png' %(method, shape[0], shape[1], q), dpi=200, bbox_inches='tight')
+    if not openfigs:
         plt.close()
 
 def make_plots(shapes, method, q, J, Ts, ES_T, MS_T, Angles_T,
@@ -500,43 +518,46 @@ def make_plots(shapes, method, q, J, Ts, ES_T, MS_T, Angles_T,
                Temp_Book=None, percentages=None, parallel_bookkeeping=False,
                ts=None, CS=None, CS_Error=None, autocorr=False,
                t_h_list=None, trends=False, hist=False,
-               folder=None, savefigs=False):
+               folder=None, savefigs=False, openfigs=True):
     '''compact function to make plots'''
     t0 = time.time()
     if mag_com:
         for Ms_comps, Ms_comps_error, shape in zip(M_Comps, M_Comps_Error, shapes):
-            plot_magnetic_components(Ms_comps, Ms_comps_error, Ts, q, J, shape, method, folder, savefigs)
+            plot_magnetic_components(Ms_comps, Ms_comps_error, Ts, q, J, shape, method, folder, savefigs, openfigs)
     if mag:
-        plot_O_over_T(shapes, method, q, J, Ts, MS, MS_Error, "magnetization", folder, savefigs)
+        plot_O_over_T(shapes, method, q, J, Ts, MS, MS_Error, "magnetization", folder, savefigs, openfigs)
     if inner_energy:
-        plot_O_over_T(shapes, method, q, J, Ts, US, US_Error, "inner energy", folder, savefigs)
+        plot_O_over_T(shapes, method, q, J, Ts, US, US_Error, "inner energy", folder, savefigs, openfigs)
     if cV_Xi:
-        plot_cV_Xi(shapes, method, q, J, Ts, CVS, CVS_Error, XIS, XIS_Error, folder, savefigs)
+        plot_cV_Xi(shapes, method, q, J, Ts, CVS, CVS_Error, XIS, XIS_Error, folder, savefigs, openfigs)
     if parallel_bookkeeping:
         for temp_book, shape, percentage in zip(Temp_Book, shapes, percentages):
-            plot_parallel_tempering_bookkeeping(np.array(temp_book)[:, :50], shape, q, J, percentage, folder, savefigs)
+            plot_parallel_tempering_bookkeeping(np.array(temp_book)[:, :50], shape, q, J, percentage, folder, savefigs, openfigs)
     if autocorr:
         for Cs, Cs_error, shape in zip(CS, CS_Error, shapes):
-            plot_autocorrelation(Ts, ts, Cs, Cs_error, q, shape, method, folder, savefigs)
+            plot_autocorrelation(Ts, ts, Cs, Cs_error, q, shape, method, folder, savefigs, openfigs)
     if hist:
         for Es_T_data, Ms_T_data, shape in zip(ES_T_data, MS_T_data, shapes):
             for Es, T in zip(Es_T_data[t_h_list[0]:t_h_list[1]], Ts[t_h_list[0]:t_h_list[1]]):
-                plot_histogram_Os(Es, q, J, T, 'energy', shape, method, folder, savefigs)
+                plot_histogram_Os(Es, q, J, T, 'energy', shape, method, folder, savefigs, openfigs)
             for Ms, T in zip(Ms_T_data[t_h_list[0]:t_h_list[1]], Ts[t_h_list[0]:t_h_list[1]]):
-                plot_histogram_Os(Ms, q, J, T, 'magnetization', shape, method, folder, savefigs)
+                plot_histogram_Os(Ms, q, J, T, 'magnetization', shape, method, folder, savefigs, openfigs)
     if trends:
         for Es_T, Ms_T, angles_T, shape in zip(ES_T_data, MS_T_data, Angles_T_data, shapes):
             for E_T, M_T, angle_T, T in zip(Es_T[t_h_list[0]:t_h_list[1]], Ms_T[t_h_list[0]:t_h_list[1]],
                                             angles_T[t_h_list[0]:t_h_list[1]], Ts[t_h_list[0]:t_h_list[1]]):
-                plot_E_M_a(E_T, M_T, angle_T, shape, method, q, J, T, folder, savefigs)
+                plot_E_M_a(E_T, M_T, angle_T, shape, method, q, J, T, folder, savefigs, openfigs)
     t1 = time.time()
-    print((t1-t0)/60, " min for all plots")
+    t = (t1-t0)/60
+    print(t, " min for all plots")
+    return t
 
 
 ## run whole program ##
 
 def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_or_single = "Parallel Tempering Algorithm", 
-                            savefigs=True, savedata=True, folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\first_test_simulation'):
+                            openfigs=True, savefigs=True, savedata=True, writefile=True,
+                            folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\first_test_simulation'):
     '''runs a complete simulation and makes all plots'''
     # initializing the lists
     ES_T = []
@@ -547,6 +568,7 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
     Angles_T_data = []
     M_Components_T = []
     M_Components_T_data = []
+    Accep_Rate_T = []
     Replica_Bookkeeping = []
     percentages = []
     US = []
@@ -566,17 +588,18 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
     t0 = time.time()
     for i, shape in enumerate(shapes):
         if parallel_or_single == 'Parallel Tempering Algorithm':
-            fields, Es_T, Ms_T, angles_T, M_components_T, replica_bookkeeping, counter = parallel_tempering(shape, q, J, Ts, sweeps, i, len(shapes))
+            fields, Es_T, Ms_T, angles_T, M_components_T, replica_bookkeeping, counter, accep_rate_T = parallel_tempering(shape, q, J, Ts, sweeps, i, len(shapes))
             Replica_Bookkeeping.append(replica_bookkeeping)
             percentages.append(100/(sweeps * len(Ts)) * counter)
             parallel_bookkeeping = True
         elif parallel_or_single == 'Single Metropolis Algorithm':
-            fields, Es_T, Ms_T, angles_T, M_components_T = single_metropolis_Ts(shape, q, J, Ts, sweeps, i, len(shapes))
+            fields, Es_T, Ms_T, angles_T, M_components_T, accep_rate_T = single_metropolis_Ts(shape, q, J, Ts, sweeps, i, len(shapes))
             parallel_bookkeeping = False
         ES_T.append(Es_T)
         MS_T.append(Ms_T)
         Angles_T.append(angles_T)
         M_Components_T.append(M_components_T)
+        Accep_Rate_T.append(accep_rate_T)
         
         # just using the data after thermalization
         ES_T_data.append([np.array(Es[data_start:])*1/(shape[0]*shape[1]) for Es in Es_T])
@@ -584,13 +607,24 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
         Angles_T_data.append([angles[data_start:] for angles in angles_T])
         M_Components_T_data.append([M_comps[data_start:] for M_comps in M_components_T])
     t1 = time.time()
+    print('\n')
     print((t1-t0)/60, " min for all simulations")
     
+    
+    # print statemant for acceptance rate
+    print('\nacceptance rate |   temperature  |   lattice size    ')
+    for i, shape in enumerate(shapes):
+        for j, T in enumerate(Ts):
+            print('%.2f %%         |   %f     |   %g x %g         ' %(Accep_Rate_T[i][j], T, shape[0], shape[1]))
+
     # print statemant for parallel tempering
     if parallel_or_single == 'Parallel Tempering Algorithm':
+        print('\ntemperature exchange |     lattice size')
         for percentage, shape in zip(percentages, shapes):
-            print("%f %% of the times was a temperature-exchange in the simulation of lattice %g x %g!" %(percentage, shape[0], shape[1]))
-
+            print('%f %%          |      %g x %g' %(percentage, shape[0], shape[1]))
+    print('\n')
+    
+    
     # calculation of observables
     t2 = time.time()
     for i, shape in enumerate(shapes):
@@ -616,7 +650,7 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
 
     # make and save the plots
     t_h_list = [0, -1]
-    make_plots(shapes, parallel_or_single, q, J, Ts, ES_T, MS_T, Angles_T,
+    time_for_plots = make_plots(shapes, parallel_or_single, q, J, Ts, ES_T, MS_T, Angles_T,
                 ES_T_data, MS_T_data, Angles_T_data,
                 M_Comps=M_Comps, M_Comps_Error=M_Comps_Error, mag_com=True,
                 MS=MS, MS_Error=MS_Error, mag=True,
@@ -625,23 +659,31 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
                 Temp_Book=Replica_Bookkeeping, percentages=percentages, parallel_bookkeeping=parallel_bookkeeping,
                 ts=ts, CS=CS, CS_Error=CS_Error, autocorr=True,
                 t_h_list=t_h_list, trends=True, hist=True,
-                folder=folder, savefigs=savefigs)
+                folder=folder, savefigs=savefigs, openfigs=openfigs)
     
     # create text document
-    with open(folder + '\\%s_infos_of_simulation.txt' %method, 'w') as file:
-        file.write(method + '\nq = %g, J = %g\n' %(q, J))
-        file.write('lattice sizes: ')
-        for shape in shapes:
-            file.write('%g x %g, ' %(shape[0], shape[1]))
-        file.write('\nTemperatures: ')
-        for T in Ts:
-            file.write('%f, ' %T)
-        file.write('\nsweeps = %g \ndata_start = %g \n' %(sweeps, data_start))
-        file.write('%f min for all simulations \n' %((t1-t0)/60))
-        if parallel_or_single == 'Parallel Tempering Algorithm':
-            for percentage, shape in zip(percentages, shapes):
-                file.write('%f %% of the times was a temperature-exchange in the simulation of lattice %g x %g! \n' %(percentage, shape[0], shape[1]))
-        file.write('%f min for all calculations \n' %((t3-t2)/60))
+    if writefile:
+        with open(folder + '\\%s_infos_of_simulation.txt' %method, 'w') as file:
+            file.write(method + '\nq = %g, J = %g\n' %(q, J))
+            file.write('lattice sizes: ')
+            for shape in shapes:
+                file.write('%g x %g, ' %(shape[0], shape[1]))
+            file.write('\nTemperatures: ')
+            for T in Ts:
+                file.write('%f, ' %T)
+            file.write('\nsweeps = %g \ndata_start = %g \n' %(sweeps, data_start))
+            file.write('\n%f min for all simulations \n' %((t1-t0)/60))
+            file.write('\nacceptance rate |   temperature  |   lattice size\n')
+            for i, shape in enumerate(shapes):
+                for j, T in enumerate(Ts):
+                    file.write('%.2f %%         |   %f     |   %g x %g\n' %(Accep_Rate_T[i][j], T, shape[0], shape[1]))
+            if parallel_or_single == 'Parallel Tempering Algorithm':
+                file.write('\n')
+                file.write('temperature exchange |     lattice size\n')
+                for percentage, shape in zip(percentages, shapes):
+                    file.write('%f %%          |      %g x %g\n' %(percentage, shape[0], shape[1]))
+            file.write('\n%f min for all calculations \n' %((t3-t2)/60))
+            file.write('%f min for all plots' % time_for_plots)
     
     # save data
     if savedata:
@@ -670,11 +712,11 @@ if __name__=='__main__':
     method = 'Parallel Tempering Algorithm'
     # method = 'Single Metropolis Algorithm'
     
-    folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\test'
+    folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\second_test_simulation'
     
     run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts,
-                            parallel_or_single=method, savefigs=True,
-                            savedata=False, folder=folder)
+                            parallel_or_single=method, openfigs=False, savefigs=True,
+                            savedata=False, writefile=True, folder=folder)
     
     
     
