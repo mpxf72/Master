@@ -214,7 +214,7 @@ def parallel_tempering(shape, q, J, Ts, sweeps, j, N, kB=1):
 ## statistics ##
 
 @njit
-def jackknife_avrg(dataset, n_blocks=50):
+def jackknife_avrg(dataset, n_blocks=100):
     '''jackknife method to calculate averages'''
     raw_avrg = np.mean(dataset)
     sum_1 = 0
@@ -232,7 +232,7 @@ def jackknife_avrg(dataset, n_blocks=50):
     return true_avrg, sigma
 
 @njit
-def jackknife_var(dataset, n_blocks=50):
+def jackknife_var(dataset, n_blocks=100):
     '''jackknife method to calculate variances'''
     raw_var = np.var(dataset)
     sum_1 = 0
@@ -250,7 +250,7 @@ def jackknife_var(dataset, n_blocks=50):
     return true_var, sigma
 
 @njit
-def jackknife_autocorr(dataset, t, n_blocks=10):
+def jackknife_autocorr(dataset, t, n_blocks=1000):
     '''jackknife method to calculate autocorrelations'''
     raw_autocorr = autocorrelation_t(dataset, t)
     sum_1 = 0
@@ -277,7 +277,7 @@ def autocorrelation_t(dataset, t):
     numerator *= 1/stop
     return (numerator - np.mean(dataset)**2)/np.var(dataset)
 
-def autocorrelation_ts(datasets, ts):
+def autocorrelation_ts(datasets, ts, n_blocks=1000):
     '''uses the autocorrelation_t function to calculate the autocorrelation for different t with jackknive routine'''
     #t0 = time.time()
     Cs = []
@@ -286,7 +286,7 @@ def autocorrelation_ts(datasets, ts):
         Cs.append([])
         Cs_error.append([])
         for t in ts:
-            Cs_i, Cs_error_i = jackknife_autocorr(np.array(dataset), t)
+            Cs_i, Cs_error_i = jackknife_autocorr(np.array(dataset), t, n_blocks=n_blocks)
             Cs[i].append(Cs_i)
             Cs_error[i].append(Cs_error_i)
     #t1 = time.time()
@@ -305,18 +305,18 @@ def autocorrelation_tau(dataset):
 ## calculation of observables ##
 
 @njit
-def heat_capacity(energies, T, kB=1):
+def heat_capacity(energies, T, kB=1, n_blocks=100):
     '''uses the jackknive_var function to calculate the heat capacity'''
-    var, error = jackknife_var(energies)
+    var, error = jackknife_var(energies, n_blocks=n_blocks)
     return 1/(kB * T**2) * var, 1/(kB * T**2) * error
 
 @njit
-def magnetic_susceptibility(magnetizations, T, kB=1):
+def magnetic_susceptibility(magnetizations, T, kB=1, n_blocks=100):
     '''uses the jackknive_var function to calculate the magnetic susceptibility'''
-    var, error = jackknife_var(magnetizations)
+    var, error = jackknife_var(magnetizations, n_blocks=n_blocks)
     return 1/(kB * T) * var, 1/(kB * T) * error
 
-def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T):
+def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T, n_blocks=100):
     '''uses the heat_capacity and the magnetic_susceptibility function to calculate the susceptibilities for different temperatures'''
     cVs = []
     cVs_error = []
@@ -324,8 +324,8 @@ def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T):
     Xis_error = []
     #t0 = time.time()
     for E_T, M_T, angle_T, T in zip(Es_T, Ms_T, angles_T, Ts):
-        cV, cV_error = heat_capacity(np.array(E_T), T)
-        Xi, Xi_error = magnetic_susceptibility(np.array(M_T), T)
+        cV, cV_error = heat_capacity(np.array(E_T), T, n_blocks=n_blocks)
+        Xi, Xi_error = magnetic_susceptibility(np.array(M_T), T, n_blocks=n_blocks)
         cVs.append(cV)
         cVs_error.append(cV_error)
         Xis.append(Xi)
@@ -334,20 +334,20 @@ def calc_cVs_Xis(q, J, Ts, Es_T, Ms_T, angles_T):
     #print((t1-t0)/60, " min for the calculation of cV and Xi with errors!")
     return cVs, cVs_error, Xis, Xis_error
 
-def calc_Os(data_Ts, string):
+def calc_Os(data_Ts, string, n_blocks=100):
     '''uses the jackknive_avrg function to calculate some observables at different temperatures'''
     O_Ts = []
     O_Ts_error = []
     #t0 = time.time()
     for data_T in data_Ts:
-        O_T, O_T_error = jackknife_avrg(np.array(data_T))
+        O_T, O_T_error = jackknife_avrg(np.array(data_T), n_blocks=n_blocks)
         O_Ts.append(O_T)
         O_Ts_error.append(O_T_error)
     #t1 = time.time()
     #print((t1-t0)/60, " min for the calculation of " + string + " with errors!")
     return O_Ts, O_Ts_error
 
-def calc_components(q, data_Ts):
+def calc_components(q, data_Ts, n_blocks=100):
     '''uses the jackknive_avrg function to calculate the components of the magnetization'''
     M_comp_Ts = []
     M_comp_Ts_error = []
@@ -357,7 +357,7 @@ def calc_components(q, data_Ts):
         M_comp_Ts_error.append([])
         data_sorted = np.sort(data, axis=1)
         for qi in range(q):
-            avrg_component, error_component = jackknife_avrg(data_sorted[:, qi])
+            avrg_component, error_component = jackknife_avrg(data_sorted[:, qi], n_blocks=n_blocks)
             M_comp_Ts[k].append(avrg_component)
             M_comp_Ts_error[k].append(error_component)
     #t1 = time.time()
@@ -461,7 +461,7 @@ def plot_parallel_tempering_bookkeeping(replicas_Ts, shape, q, J, percentage, fo
     plt.xlabel('simulation time')
     plt.ylabel('replica')
     plt.title('Parallel Tempering - Evolution of Temperatures of the replicas \n %f %% of the times was a temperature-exchange \n in the simulation of lattice with size %g x %g, q=%g and J=%g!' %(percentage, shape[0], shape[1], q, J))
-    plt.legend(loc='right')
+    plt.legend(fontsize='x-small', loc='right')
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\paralle_bookkeeping_%g x %g_q=%g_J=%g.png' %(shape[0], shape[1], q, J), dpi=200, bbox_inches='tight')
@@ -496,13 +496,13 @@ def plot_magnetic_components(M_comp_Ts, M_comp_Ts_error, Ts, q, J, shape, method
 
 def plot_autocorrelation(Ts, ts, Cs, Cs_error, q, shape, method, folder, savefigs, openfigs):
     '''plots the autocorrelation of the dataset for different spacings ts'''
-    fig = plt.figure(dpi=150)
+    fig = plt.figure(dpi=300)
     for T, Cs_T, Cs_error_T in zip(Ts, Cs, Cs_error):
         plt.errorbar(ts, Cs_T, yerr=Cs_error_T, fmt='.--', linewidth=0.7, capsize=5, capthick=0.7, label='T = %g' %T)
     plt.title('%s \n Autocorrelation of Energies, lattice size = %g x %g, q = %g' %(method, shape[0], shape[1], q))
     plt.xlabel('monte carlo step')
     plt.ylabel('autocorrelation')
-    plt.legend()
+    plt.legend(fontsize='x-small', loc='right')
     plt.show()
     if savefigs:
         plt.savefig(folder + '\\%s_autocorrelation_%g x %g_q=%g.png' %(method, shape[0], shape[1], q), dpi=200, bbox_inches='tight')
@@ -555,9 +555,10 @@ def make_plots(shapes, method, q, J, Ts, ES_T, MS_T, Angles_T,
 
 ## run whole program ##
 
-def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_or_single = "Parallel Tempering Algorithm", 
+def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_or_single = "Parallel Tempering Algorithm",
+                            n_blocks_O=100, n_blocks_auto=1000,
                             openfigs=True, savefigs=True, savedata=True, writefile=True,
-                            folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\first_test_simulation'):
+                            folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\test'):
     '''runs a complete simulation and makes all plots'''
     # initializing the lists
     ES_T = []
@@ -628,21 +629,21 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
     # calculation of observables
     t2 = time.time()
     for i, shape in enumerate(shapes):
-        Us, Us_error = calc_Os(ES_T_data[i], "inner energy")
+        Us, Us_error = calc_Os(ES_T_data[i], "inner energy", n_blocks=n_blocks_O)
         US.append(Us)
         US_Error.append(Us_error)
-        Ms, Ms_error = calc_Os(MS_T_data[i], "magnetization")
+        Ms, Ms_error = calc_Os(MS_T_data[i], "magnetization", n_blocks=n_blocks_O)
         MS.append(Ms)
         MS_Error.append(Ms_error)
-        M_comps, M_comps_error = calc_components(q, M_Components_T_data[i])
+        M_comps, M_comps_error = calc_components(q, M_Components_T_data[i], n_blocks=n_blocks_O)
         M_Comps.append(M_comps)
         M_Comps_Error.append(M_comps_error)
-        cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, ES_T_data[i], MS_T_data[i], Angles_T_data[i])
+        cVs, cVs_error, Xis, Xis_error = calc_cVs_Xis(q, J, Ts, ES_T_data[i], MS_T_data[i], Angles_T_data[i], n_blocks=n_blocks_O)
         CVS.append(cVs)
         CVS_Error.append(cVs_error)
         XIS.append(Xis)
         XIS_Error.append(Xis_error)
-        Cs, Cs_error = autocorrelation_ts(ES_T_data[i], ts)
+        Cs, Cs_error = autocorrelation_ts(ES_T_data[i], ts, n_blocks=n_blocks_auto)
         CS.append(Cs)
         CS_Error.append(Cs_error)
     t3 = time.time()
@@ -701,22 +702,24 @@ def run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts, parallel_o
 if __name__=='__main__':
 
     # setting for simulation
-    shapes = [(10, 10), (15, 15), (20, 20)]
-    q = 5
+    shapes = [(30, 30)]
+    q = 10
     J = 1
-    Ts = np.array([0.83, 0.84, 0.845, 0.848, 0.85, 0.852, 0.854, 0.856, 0.858, 0.86, 0.862, 0.865, 0.87, 0.88])
-    sweeps = 100000
-    data_start = 5000
-    ts = [4, 8, 16, 32, 64, 128, 256, 512]
+    # Ts = np.array([0.835, 0.84, 0.843, 0.844, 0.845, 0.846,  0.847, 0.848, 0.849, 0.85, 0.851, 0.852, 0.853, 0.854, 0.855, 0.856, 0.857, 0.858, 0.859, 0.86, 0.861, 0.862, 0.865, 0.87])
+    Ts = np.array([0.694 + i*0.001 for i in range(15)])
+    sweeps = 150000
+    data_start = 10000
+    ts = [4, 8, 16, 32, 64, 128, 256, 350, 512]
     
     method = 'Parallel Tempering Algorithm'
     # method = 'Single Metropolis Algorithm'
     
-    folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\second_test_simulation'
+    folder = 'C:\\Users\\unter\\Documents\\Uni\\Master Physics\\1. Semester\\Monte Carlo Methods VU\\Project\\test'
     
     run_complete_simulation(shapes, q, J, Ts, sweeps, data_start, ts,
-                            parallel_or_single=method, openfigs=False, savefigs=True,
-                            savedata=False, writefile=True, folder=folder)
+                            parallel_or_single=method, n_blocks_O=100, n_blocks_auto=1000,
+                            openfigs=False, savefigs=True,
+                            savedata=True, writefile=True, folder=folder)
     
     
     
